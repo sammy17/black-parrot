@@ -189,8 +189,8 @@ class NBF:
         print(nbf)
 
     # Write DRAM
-    if self.mem_file:
-      self.init_dram()
+    # if self.mem_file:
+    #   self.init_dram()
 
     # Freeze clear
     self.print_nbf_allcores(3, cfg_base_addr + cfg_reg_freeze, 0)

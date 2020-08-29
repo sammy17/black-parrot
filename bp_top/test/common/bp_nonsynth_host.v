@@ -195,7 +195,7 @@ always_ff @(negedge clk_i)
      ,.data_o(bootrom_data_lo)
      );
 
-  localparam sd_card_els_lp = 256;
+  localparam sd_card_els_lp = 2**17;
   localparam lg_sd_card_els_lp = `BSG_SAFE_CLOG2(sd_card_els_lp);
   logic [lg_sd_card_els_lp-1:0] sd_card_addr_li;
   logic [dword_width_p-1:0] sd_card_data_lo;

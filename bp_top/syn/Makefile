@@ -22,10 +22,8 @@ export SAC_MASK ?= 0x0
 
 ifeq ($(word 3,$(subst _, ,$(CFG))), multicore)
 export MULTICORE := 1
-export NUM_CORES := $(word 4,$(subst _, ,$(CFG)))
 else
 export MULTICORE := 0
-export NUM_CORES := 1
 endif
 
 -include $(BP_TEST_DIR)/Makefile.tests

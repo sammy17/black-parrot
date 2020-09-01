@@ -9,4 +9,4 @@ clean:
 	rm -f bootrom.riscv *.bin *.out
 
 build:
-	$(RISCV_GCC) bootrom.S -DMULTICORE=$(MULTICORE) -DNUM_CORES=$(NUM_CORES) -DDOMAIN_MASK=$(DOMAIN_MASK) -DSAC_MASK=$(SAC_MASK) -o bootrom.riscv -Tlink.ld -static -Wl,--no-gc-sections
+	$(RISCV_GCC) bootrom.S -DMULTICORE=$(MULTICORE) -DNUM_CORES=$(NCPUS) -DDOMAIN_MASK=$(DOMAIN_MASK) -DSAC_MASK=$(SAC_MASK) -o bootrom.riscv -Tlink.ld -static -Wl,--no-gc-sections

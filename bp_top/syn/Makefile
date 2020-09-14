@@ -20,12 +20,6 @@ export TAG   ?= none
 export DOMAIN_MASK ?= 0x01
 export SAC_MASK ?= 0x0
 
-ifeq ($(word 3,$(subst _, ,$(CFG))), multicore)
-export MULTICORE := 1
-else
-export MULTICORE := 0
-endif
-
 -include $(BP_TEST_DIR)/Makefile.tests
 -include $(TB_PATH)/$(TB)/Makefile.cfgs
 -include $(TB_PATH)/$(TB)/Makefile.params

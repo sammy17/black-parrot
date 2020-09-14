@@ -3,10 +3,6 @@
 #define PROG_LOAD_FINISH  0xFFFFFF0000000000
 #define MARKER            0xF0F0F0F0F0F0F0F0
 
-#ifndef MULTICORE
-  #define MUTLICORE 0
-#endif
-
 #ifndef NUM_CORES
   #define NUM_CORES 1
 #endif
@@ -134,12 +130,8 @@ load_prog:
     j load_prog
 load_prog_done:
     
-    /* Flush the D$; Only for unicore */
-    li t1, MULTICORE
-    bnez t1, multicore
+    /* Flush the D$ */
     fence.i
-multicore:
-
     li x31, DRAM_BASE_ADDR
     csrw dpc, x31
     csrwi dcsr, 0x3

@@ -134,18 +134,13 @@
                                                                                                    \
   typedef struct packed                                                                            \
   {                                                                                                \
-    logic                        v;                                                                \
-    logic                        queue_v;                                                          \
-    logic                        instret;                                                          \
-    logic [vaddr_width_p-1:0]    pc;                                                               \
-    logic [vaddr_width_p-1:0]    npc;                                                              \
-    logic [instr_width_p-1:0]    instr;                                                            \
-  }  bp_be_commit_pkt_s;                                                                           \
-                                                                                                   \
-  typedef struct packed                                                                            \
-  {                                                                                                \
     logic                           v;                                                             \
+    logic                           redirect_v;                                                    \
+    logic                           queue_v;                                                       \
+    logic                           instret;                                                       \
+    logic [vaddr_width_p-1:0]       pc;                                                            \
     logic [vaddr_width_p-1:0]       npc;                                                           \
+    logic [instr_width_p-1:0]       instr;                                                         \
     logic [rv64_priv_width_gp-1:0]  priv_n;                                                        \
     logic                           translation_en_n;                                              \
     logic                           exception;                                                     \
@@ -155,7 +150,7 @@
     logic                           sfence;                                                        \
     logic                           satp;                                                          \
     logic                           rollback;                                                      \
-  }  bp_be_trap_pkt_s;                                                                             \
+  }  bp_be_commit_pkt_s;                                                                           \
                                                                                                    \
   typedef struct packed                                                                            \
   {                                                                                                \
@@ -243,13 +238,11 @@
   (3 + vaddr_width_mp)
 
 `define bp_be_commit_pkt_width(vaddr_width_mp) \
-  (3                                                                                               \
+  (4                                                                                               \
    + 2 * vaddr_width_mp                                                                            \
    + instr_width_p                                                                                 \
-   )
-
-`define bp_be_trap_pkt_width(vaddr_width_mp) \
-  (1 + 1 * vaddr_width_mp + rv64_priv_width_gp + 8)
+   + rv64_priv_width_gp                                                                            \
+   + 8)
 
 `define bp_be_wb_pkt_width(vaddr_width_mp) \
   (1                                                                                               \

@@ -96,7 +96,6 @@ module bp_be_top
   logic interrupt_ready_lo, interrupt_v_li;
 
   bp_be_commit_pkt_s commit_pkt;
-  bp_be_trap_pkt_s trap_pkt;
   bp_be_wb_pkt_s iwb_pkt, fwb_pkt;
 
   bp_be_isd_status_s isd_status;
@@ -134,7 +133,7 @@ module bp_be_top
      ,.poison_isd_o(poison_isd_lo)
 
      ,.br_pkt_i(br_pkt)
-     ,.trap_pkt_i(trap_pkt)
+     ,.commit_pkt_i(commit_pkt)
      ,.ptw_fill_pkt_i(ptw_fill_pkt)
      );
 
@@ -169,7 +168,7 @@ module bp_be_top
      ,.poison_iss_i(flush)
      ,.poison_isd_i(poison_isd_lo)
      ,.dispatch_v_i(chk_dispatch_v)
-     ,.cache_miss_v_i(trap_pkt.rollback)
+     ,.cache_miss_v_i(commit_pkt.rollback)
      ,.cmt_v_i(commit_pkt.queue_v)
      ,.suppress_iss_i(suppress_iss_lo)
      ,.fpu_en_i(fpu_en_lo)
@@ -207,7 +206,6 @@ module bp_be_top
 
      ,.br_pkt_o(br_pkt)
      ,.commit_pkt_o(commit_pkt)
-     ,.trap_pkt_o(trap_pkt)
      ,.iwb_pkt_o(iwb_pkt)
      ,.fwb_pkt_o(fwb_pkt)
 

@@ -24,7 +24,6 @@ module bp_be_pipe_sys
    , localparam ptw_miss_pkt_width_lp = `bp_be_ptw_miss_pkt_width(vaddr_width_p)
    , localparam ptw_fill_pkt_width_lp = `bp_be_ptw_fill_pkt_width(vaddr_width_p)
    , localparam commit_pkt_width_lp   = `bp_be_commit_pkt_width(vaddr_width_p)
-   , localparam trap_pkt_width_lp     = `bp_be_trap_pkt_width(vaddr_width_p)
    , localparam trans_info_width_lp   = `bp_be_trans_info_width(ptag_width_p)
    , localparam wb_pkt_width_lp       = `bp_be_wb_pkt_width(vaddr_width_p)
    )
@@ -39,6 +38,13 @@ module bp_be_pipe_sys
    , input                                kill_ex2_i
    , input                                kill_ex3_i
 
+   , input                                commit_pkt_v_i
+   , input                                commit_pkt_queue_v_i
+   , input                                commit_pkt_instret_i
+   , input [vaddr_width_p-1:0]            commit_pkt_pc_i
+   , input [vaddr_width_p-1:0]            commit_pkt_npc_i
+   , input [instr_width_p-1:0]            commit_pkt_instr_i
+
    , input [exception_width_lp-1:0]       exception_i
    , input [vaddr_width_p-1:0]            exception_pc_i
    , input [vaddr_width_p-1:0]            exception_vaddr_i
@@ -52,8 +58,7 @@ module bp_be_pipe_sys
 
    , input [wb_pkt_width_lp-1:0]          iwb_pkt_i
    , input [wb_pkt_width_lp-1:0]          fwb_pkt_i
-   , input [commit_pkt_width_lp-1:0]      commit_pkt_i
-   , output [trap_pkt_width_lp-1:0]       trap_pkt_o
+   , output [commit_pkt_width_lp-1:0]     commit_pkt_o
 
    , input                                interrupt_v_i
    , output                               interrupt_ready_o
@@ -76,14 +81,12 @@ module bp_be_pipe_sys
   bp_be_ptw_miss_pkt_s ptw_miss_pkt;
   bp_be_ptw_fill_pkt_s ptw_fill_pkt;
   bp_be_commit_pkt_s commit_pkt;
-  bp_be_trap_pkt_s trap_pkt;
   bp_be_wb_pkt_s iwb_pkt, fwb_pkt;
   bp_be_trans_info_s trans_info;
 
   assign ptw_miss_pkt_o = ptw_miss_pkt;
   assign ptw_fill_pkt = ptw_fill_pkt_i;
-  assign commit_pkt = commit_pkt_i;
-  assign trap_pkt_o = trap_pkt;
+  assign commit_pkt_o = commit_pkt;
   assign iwb_pkt = iwb_pkt_i;
   assign fwb_pkt = fwb_pkt_i;
   assign trans_info_o = trans_info;
@@ -170,11 +173,11 @@ module bp_be_pipe_sys
     end
 
   wire ptw_page_fault_v  = ptw_fill_pkt.instr_page_fault_v | ptw_fill_pkt.load_page_fault_v | ptw_fill_pkt.store_page_fault_v;
-  wire exception_v_li = ptw_page_fault_v | commit_pkt.v;
-  wire [vaddr_width_p-1:0] exception_pc_li = ptw_page_fault_v ? ptw_fill_pkt.pc : commit_pkt.pc;
-  wire [vaddr_width_p-1:0] exception_npc_li = ptw_page_fault_v ? '0 : commit_pkt.npc;
+  wire exception_v_li = ptw_page_fault_v | commit_pkt_v_i;
+  wire [vaddr_width_p-1:0] exception_pc_li = ptw_page_fault_v ? ptw_fill_pkt.pc : commit_pkt_pc_i;
+  wire [vaddr_width_p-1:0] exception_npc_li = ptw_page_fault_v ? '0 : commit_pkt_npc_i;
   wire [vaddr_width_p-1:0] exception_vaddr_li = ptw_page_fault_v ? ptw_fill_pkt.vaddr : exception_vaddr_i;
-  wire [instr_width_p-1:0] exception_instr_li = commit_pkt.instr;
+  wire [instr_width_p-1:0] exception_instr_li = commit_pkt_instr_i;
 
   logic [dword_width_p-1:0] csr_data_lo;
   bp_be_csr
@@ -189,9 +192,12 @@ module bp_be_pipe_sys
      ,.csr_cmd_v_i(csr_cmd_v_lo & ~kill_ex3_i)
      ,.csr_data_o(csr_data_lo)
 
-     ,.instret_i(commit_pkt.instret)
+     ,.instret_i(commit_pkt_instret_i)
      ,.fflags_acc_i(iwb_pkt.fflags_acc | fwb_pkt.fflags_acc)
      ,.frf_w_v_i(fwb_pkt.rd_w_v)
+
+     ,.commit_pkt_v_i(commit_pkt_v_i)
+     ,.commit_pkt_queue_v_i(commit_pkt_queue_v_i)
 
      ,.exception_v_i(exception_v_li)
      ,.exception_pc_i(exception_pc_li)
@@ -205,15 +211,15 @@ module bp_be_pipe_sys
      ,.interrupt_ready_o(interrupt_ready_o)
      ,.interrupt_v_i(interrupt_v_i)
 
-     ,.trap_pkt_o(trap_pkt)
+     ,.commit_pkt_o(commit_pkt)
      ,.trans_info_o(trans_info)
      ,.frm_dyn_o(frm_dyn_o)
      ,.fpu_en_o(fpu_en_o)
      );
 
   assign data_o           = csr_data_lo;
-  assign exc_v_o          = trap_pkt.exception | (ptw_miss_pkt.instr_miss_v | ptw_miss_pkt.load_miss_v | ptw_miss_pkt.store_miss_v);
-  assign miss_v_o         = trap_pkt.rollback;
+  assign exc_v_o          = commit_pkt.exception | (ptw_miss_pkt.instr_miss_v | ptw_miss_pkt.load_miss_v | ptw_miss_pkt.store_miss_v);
+  assign miss_v_o         = commit_pkt.rollback;
 
 endmodule
 

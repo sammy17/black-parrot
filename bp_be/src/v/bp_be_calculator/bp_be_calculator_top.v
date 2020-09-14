@@ -30,7 +30,6 @@ module bp_be_calculator_top
    , localparam branch_pkt_width_lp     = `bp_be_branch_pkt_width(vaddr_width_p)
    , localparam pipe_stage_reg_width_lp = `bp_be_pipe_stage_reg_width(vaddr_width_p)
    , localparam commit_pkt_width_lp     = `bp_be_commit_pkt_width(vaddr_width_p)
-   , localparam trap_pkt_width_lp       = `bp_be_trap_pkt_width(vaddr_width_p)
    , localparam wb_pkt_width_lp         = `bp_be_wb_pkt_width(vaddr_width_p)
    , localparam ptw_miss_pkt_width_lp   = `bp_be_ptw_miss_pkt_width(vaddr_width_p)
    , localparam ptw_fill_pkt_width_lp   = `bp_be_ptw_fill_pkt_width(vaddr_width_p)
@@ -53,7 +52,6 @@ module bp_be_calculator_top
 
   , output [ptw_fill_pkt_width_lp-1:0]  ptw_fill_pkt_o
   , output [commit_pkt_width_lp-1:0]    commit_pkt_o
-  , output [trap_pkt_width_lp-1:0]      trap_pkt_o
   , output [branch_pkt_width_lp-1:0]    br_pkt_o
   , output [wb_pkt_width_lp-1:0]        iwb_pkt_o
   , output [wb_pkt_width_lp-1:0]        fwb_pkt_o
@@ -104,12 +102,10 @@ module bp_be_calculator_top
   bp_cfg_bus_s           cfg_bus;
   bp_be_wb_pkt_s         long_iwb_pkt, long_fwb_pkt, calc_iwb_pkt, calc_fwb_pkt;
   bp_be_commit_pkt_s     commit_pkt;
-  bp_be_trap_pkt_s       trap_pkt;
 
   assign dispatch_pkt = dispatch_pkt_i;
   assign calc_status_o = calc_status;
   assign commit_pkt_o = commit_pkt;
-  assign trap_pkt_o = trap_pkt;
 
   // Pipeline stage registers
   bp_be_pipe_stage_reg_s                         calc_stage_isd;
@@ -293,7 +289,7 @@ module bp_be_calculator_top
      ,.cfg_bus_i(cfg_bus_i)
 
      ,.flush_i(flush_i)
-     ,.sfence_i(trap_pkt.sfence)
+     ,.sfence_i(commit_pkt.sfence)
 
      ,.reservation_i(reservation_r)
      ,.ready_o(pipe_mem_ready_lo)
@@ -357,11 +353,17 @@ module bp_be_calculator_top
      ,.ptw_miss_pkt_o(ptw_miss_pkt)
      ,.ptw_fill_pkt_i(ptw_fill_pkt)
 
+     ,.commit_pkt_v_i(calc_stage_r[2].v & ~exc_stage_r[2].poison_v)
+     ,.commit_pkt_queue_v_i(calc_stage_r[2].v & ~exc_stage_r[2].roll_v)
+     ,.commit_pkt_instret_i(calc_stage_r[2].v & ~exc_stage_r[2].poison_v & ~pipe_sys_miss_v_lo & ~pipe_sys_exc_v_lo)
+     ,.commit_pkt_pc_i(calc_stage_r[2].pc)
+     ,.commit_pkt_npc_i(calc_stage_r[1].pc)
+     ,.commit_pkt_instr_i(calc_stage_r[2].instr)
+
      ,.exception_i(exc_stage_r[2].exc)
      ,.exception_pc_i(calc_stage_r[2].pc)
      ,.exception_vaddr_i(pipe_mem_vaddr_lo)
-     ,.commit_pkt_i(commit_pkt)
-     ,.trap_pkt_o(trap_pkt)
+     ,.commit_pkt_o(commit_pkt)
      ,.iwb_pkt_i(iwb_pkt_o)
      ,.fwb_pkt_i(fwb_pkt_o)
 
@@ -497,7 +499,7 @@ module bp_be_calculator_top
       calc_stage_isd.pipe_mem_final_v = reservation_n.decode.pipe_mem_final_v;
       calc_stage_isd.pipe_sys_v     = reservation_n.decode.pipe_sys_v;
       calc_stage_isd.pipe_mul_v     = reservation_n.decode.pipe_mul_v;
-      calc_stage_isd.pipe_fma_v      = reservation_n.decode.pipe_fma_v;
+      calc_stage_isd.pipe_fma_v     = reservation_n.decode.pipe_fma_v;
       calc_stage_isd.pipe_long_v    = reservation_n.decode.pipe_long_v;
       calc_stage_isd.mem_v          = reservation_n.decode.mem_v;
       calc_stage_isd.csr_v          = reservation_n.decode.csr_v;
@@ -601,13 +603,6 @@ module bp_be_calculator_top
           exc_stage_n[2].exc.store_access_fault = pipe_mem_store_access_fault_lo;
           exc_stage_n[2].exc.store_page_fault   = pipe_mem_store_page_fault_lo;
     end
-
-  assign commit_pkt.v          = calc_stage_r[2].v & ~exc_stage_r[2].poison_v;
-  assign commit_pkt.queue_v    = calc_stage_r[2].v & ~exc_stage_r[2].roll_v;
-  assign commit_pkt.instret    = calc_stage_r[2].v & ~exc_stage_r[2].poison_v & ~pipe_sys_miss_v_lo & ~pipe_sys_exc_v_lo;
-  assign commit_pkt.pc         = calc_stage_r[2].pc;
-  assign commit_pkt.npc        = calc_stage_r[1].pc;
-  assign commit_pkt.instr      = calc_stage_r[2].instr;
 
   assign calc_iwb_pkt.rd_w_v     = calc_stage_r[4].irf_w_v & ~exc_stage_r[4].poison_v;
   assign calc_iwb_pkt.rd_addr    = calc_stage_r[4].instr.t.rtype.rd_addr;

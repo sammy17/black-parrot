@@ -8,8 +8,12 @@
  *
  *   The LCE-CCE and CCE-MEM Interfaces use the BP Burst protocol
  *
- *   Uncached accesses are supported to all addresses and cached access is supported to
- *   a subset of the address space that is kept coherent by the CCE, according to the
+ *   There are two modes of operation:
+ *   1. uncached only - all requests are treated as uncached and the coherence protocol is not used
+ *   2. normal - requests obey coherence and cacheability properties of the bp_cce_pma
+ *
+ *   In normal mode, uncached accesses are supported to all addresses and cached accesses are
+ *   supported to a subset of the address space kept coherent by the CCE, according to the
  *   CCE's PMA. The cached and coherent region is currently defined as DRAM / main memory.
  *
  *   Atomics in L2/Mem will be supported in a future change.
@@ -291,6 +295,7 @@ module bp_cce_fsm
   bp_cfg_bus_s cfg_bus_cast_i;
   assign cfg_bus_cast_i = cfg_bus_i;
   wire cce_normal_mode = (cfg_bus_cast_i.cce_mode == e_cce_mode_normal);
+  logic cce_normal_mode_r, cce_normal_mode_n;
 
   // CCE FSM
 
@@ -412,6 +417,8 @@ module bp_cce_fsm
       ,.req_lce_i(mshr_r.lce_id)
       ,.req_type_flag_i(mshr_r.flags[e_opd_rqf])
       ,.lru_coh_state_i(mshr_r.lru_coh_state)
+      ,.atomic_req_flag_i(mshr_r.flags[e_opd_arf])
+      ,.uncached_req_flag_i(mshr_r.flags[e_opd_ucf])
 
       ,.req_addr_way_o(gad_req_addr_way_lo)
       ,.owner_lce_o(gad_owner_lce_lo)
@@ -426,6 +433,23 @@ module bp_cce_fsm
       ,.cached_forward_flag_o(gad_cached_forward_flag_lo)
       );
 
+  // CCE PMA - LCE Requests
+  logic req_pma_coherent_lo;
+  bp_cce_pma
+    #(.bp_params_p(bp_params_p))
+    req_pma
+      (.paddr_i(lce_req.addr)
+       ,.coherent_o(req_pma_coherent_lo)
+       );
+
+  // CCE PMA - Mem responses
+  logic resp_pma_coherent_lo;
+  bp_cce_pma
+    #(.bp_params_p(bp_params_p))
+    resp_pma
+      (.paddr_i(mem_resp.addr)
+       ,.coherent_o(resp_pma_coherent_lo)
+       );
 
   typedef enum logic [5:0] {
     e_reset
@@ -436,9 +460,10 @@ module bp_cce_fsm
     , e_sync_ack
     , e_ready
 
-    , e_uc_req
+    , e_uncached_req
+    , e_uncached_store
     , e_read_pending
-    , e_deq_lce_req
+    , e_coherent_req
     , e_read_mem_spec
     , e_read_dir
     , e_wait_dir_gad
@@ -450,6 +475,13 @@ module bp_cce_fsm
 
     , e_replacement
     , e_replacement_wb_resp
+    , e_replacement_wb_resp_data
+
+    , e_uc_coherent_cmd
+    , e_uc_coherent_resp
+    , e_uc_coherent_resp_data
+    , e_uc_coherent_mem_cmd
+    , e_uc_coherent_mem_cmd_data
 
     , e_upgrade_stw_cmd
 
@@ -458,6 +490,7 @@ module bp_cce_fsm
     , e_transfer_st_cmd
     , e_transfer_wb_cmd
     , e_transfer_wb_resp
+    , e_transfer_wb_resp_data
 
     , e_resolve_speculation
 
@@ -654,6 +687,7 @@ module bp_cce_fsm
     sharers_ways_n = sharers_ways_r;
     sharers_hits_n = sharers_hits_r;
     pe_sharers_n = pe_sharers_r;
+    cce_normal_mode_n = cce_normal_mode_r;
 
     // inbound ports
     mem_resp_yumi = '0;
@@ -905,6 +939,13 @@ module bp_cce_fsm
             mrdc_set = mem_resp_yumi;
             mrdc_val = mem_resp_size_in_packets;
 
+            // decrement pending bit on mem response dequeue (same as lce cmd send)
+            // if normal mode and request was made to coherent memory space
+            pending_busy = mem_resp_yumi & cce_normal_mode_r & resp_pma_coherent_lo;
+            pending_w_v = mem_resp_yumi & cce_normal_mode_r & resp_pma_coherent_lo;
+            pending_w_addr = mem_resp.addr;
+            pending_li = 1'b0;
+
           end // uc_rd
 
           // Uncached store response, send UC Store Done to requesting LCE,
@@ -927,6 +968,13 @@ module bp_cce_fsm
             lce_cmd.way_id = '0;
             lce_cmd.addr = mem_resp.addr;
             // leave size as '0 equivalent, no data in this message
+
+            // decrement pending bit on mem response dequeue (same as lce cmd send)
+            // if normal mode and request was made to coherent memory space
+            pending_busy = mem_resp_yumi & cce_normal_mode_r & resp_pma_coherent_lo;
+            pending_w_v = mem_resp_yumi & cce_normal_mode_r & resp_pma_coherent_lo;
+            pending_w_addr = mem_resp.addr;
+            pending_li = 1'b0;
 
           end // uc_wr
 
@@ -985,7 +1033,8 @@ module bp_cce_fsm
         cnt_rst = 1'b1;
         cnt_0_clr = 1'b1;
         cnt_1_clr = 1'b1;
-      end
+      end // e_reset
+
       e_clear_dir: begin
         dir_w_v = 1'b1;
         dir_cmd = e_clr_op;
@@ -1022,6 +1071,7 @@ module bp_cce_fsm
                   : e_clear_dir;
 
       end // e_clear_dir
+
       e_uncached_only: begin
 
         // clear the MSHR
@@ -1033,6 +1083,7 @@ module bp_cce_fsm
 
         state_n = e_uncached_only;
 
+        // begin transition to normal mode when config bus changes the mode
         if (cce_normal_mode) begin
           state_n = e_send_sync;
 
@@ -1065,8 +1116,9 @@ module bp_cce_fsm
             mem_cmd.msg_type = e_mem_msg_uc_rd;
           end
 
-        end // send uncached request
+        end // ~cce_normal_mode & lce_req_v
       end // e_uncached_only
+
       e_uncached_only_data: begin
         // send data
         // last send occurs when cnt is zero
@@ -1079,12 +1131,19 @@ module bp_cce_fsm
         mcdc_down = lce_req_data_yumi;
         state_n = (lce_req_data_yumi & (mcdc_cnt == '0))
                    ? e_uncached_only
-                   : e_uncached_only_send;
+                   : e_uncached_only_data;
 
       end // e_uncached_only_data
+
       e_send_sync: begin
         // after first entering e_send_sync from e_uncached_only, wait for all oustanding uncached
         // accesses to complete before sending first sync commnad
+
+        // register transition to normal mode when it occurs
+        cce_normal_mode_n = (~cce_normal_mode_r & cce_normal_mode & mem_credits_full)
+                            ? 1'b1
+                            : cce_normal_mode_r;
+
         if (mem_credits_full & ~lce_cmd_busy) begin
           lce_cmd_header_v_o = 1'b1;
 
@@ -1094,7 +1153,8 @@ module bp_cce_fsm
           state_n = (lce_cmd_header_v_o & lce_cmd_header_ready_i) ? e_sync_ack : e_send_sync;
           cnt_1_inc = lce_cmd_header_v_o & lce_cmd_header_ready_i;
         end
-      end
+      end // e_send_sync
+
       e_sync_ack: begin
         if (~lce_resp_coh_ack_yumi) begin
           lce_resp_yumi = lce_resp_v;
@@ -1110,7 +1170,8 @@ module bp_cce_fsm
           cnt_0_inc = lce_resp_v & ~cnt_0_clr;
           cnt_1_clr = (state_n == e_ready);
         end
-      end
+      end // e_sync_ack
+
       e_ready: begin
         // clear the MSHR
         mshr_n = '0;
@@ -1131,11 +1192,13 @@ module bp_cce_fsm
             mshr_n.lru_way_id = lce_req.lru_way_id;
             mshr_n.flags[e_opd_rqf] = (lce_req.msg_type == e_lce_req_type_wr);
             mshr_n.flags[e_opd_nerf] = lce_req.non_exclusive;
+            mshr_n.flags[e_opd_rcf] = req_pma_coherent_lo;
 
-            state_n = e_read_pending;
+            state_n = ~req_pma_coherent_lo
+                      ? e_error
+                      : e_read_pending;
 
           // uncached request
-          // request will be dequeued in the next state
           end else if (lce_req.msg_type == e_lce_req_type_uc_rd
                        | lce_req.msg_type == e_lce_req_type_uc_wr) begin
 
@@ -1143,12 +1206,19 @@ module bp_cce_fsm
             mshr_n.msg_size = lce_req.size;
             mshr_n.flags[e_opd_ucf] = 1'b1;
             mshr_n.flags[e_opd_rqf] = (lce_req.msg_type == e_lce_req_type_uc_wr);
+            mshr_n.flags[e_opd_rcf] = req_pma_coherent_lo;
 
-            state_n = e_uc_req;
+            // uncached request to coherent memory space must serialize with other coherence
+            // operations using the pending bits
+            state_n = req_pma_coherent_lo
+                      ? e_read_pending
+                      : e_uncached_req;
           end
         end
       end // e_ready
-      e_uc_req: begin
+
+      // process uncached request to uncacheable (coherence not tracked) memory
+      e_uncached_req: begin
         // handshaking
         // r&v on mem cmd header
         // v->y on lce req header
@@ -1162,16 +1232,17 @@ module bp_cce_fsm
         // Uncached Store
         if (mshr_r.flags[e_opd_rqf]) begin
           mem_cmd.msg_type = e_mem_msg_uc_wr;
-          state_n = lce_req_yumi ? e_uc_data : e_uc_req;
+          state_n = lce_req_yumi ? e_uncached_store : e_uncached_req;
           mcdc_set = 1'b1;
           mcdc_val = lce_req_size_in_packets;
         // Uncached Load
         end else begin
           mem_cmd.msg_type = e_mem_msg_uc_rd;
-          state_n = lce_req_yumi ? e_ready : e_uc_req;
+          state_n = lce_req_yumi ? e_ready : e_uncached_req;
         end
-      end // e_uc_req
-      e_uc_data: begin
+      end // e_uncached_req
+
+      e_uncached_store: begin
         // send data
         // last send occurs when cnt is zero
         // r&v on mem cmd data
@@ -1183,30 +1254,40 @@ module bp_cce_fsm
         mcdc_down = lce_req_data_yumi;
         state_n = (lce_req_data_yumi & (mcdc_cnt == '0))
                    ? e_ready
-                   : e_uc_data;
-      end
+                   : e_uncached_store;
+      end // e_uncached_store
+
       e_read_pending: begin
         pending_r_v = 1'b1;
         state_n = (pending_lo)
                   ? e_read_pending
-                  : e_deq_lce_req;
-      end
-      e_deq_lce_req: begin
-        // dequeueing the request writes the pending bit and must arbitrate with logic above
-        if (lce_req_v & ~pending_busy) begin
-          state_n = e_read_mem_spec;
-          lce_req_yumi = lce_req_v;
+                  : e_coherent_req;
+      end // e_read_pending
 
-          pending_w_v = lce_req_yumi;
+      // Coherent memory space supports the following requests:
+      // 1. normal, cached request
+      // 2. uncached request
+      // 3. amo request (to be implemented in future)
+      // only normal, cached requests issue a speculative read of memory
+      e_coherent_req: begin
+        if (lce_req_v & ~pending_busy) begin
+          // write the pending bit only for normal requests, since only a normal request
+          // results in a coherence ack returning to the CCE
+          pending_w_v = ~(mshr_r.flags[e_opd_arf] | mshr_r.flags[e_opd_ucf]);
           pending_w_addr = lce_req.addr;
           pending_li = 1'b1;
 
-        end else begin
-          // pending bit write port is busy, stay in e_ready state and try to consume request
-          // next cycle
-          state_n = e_deq_lce_req;
+          // skip speculative memory read for uncached or amo request
+          state_n = (mshr_r.flags[e_opd_arf] | mshr_r.flags[e_opd_ucf])
+                    ? e_read_dir
+                    : e_read_mem_spec;
+
+          // only dequeue request header right now if it is a normal, cached request
+          lce_req_yumi = (lce_req_v & ~(mshr_r.flags[e_opd_arf] | mshr_r.flags[e_opd_ucf]));
+
         end
-      end
+      end // e_coherent_req
+
       e_read_mem_spec: begin
         // Mem Cmd needs to write pending bit, so only send if Mem Resp / LCE Cmd is not
         // writing the pending bit
@@ -1239,7 +1320,8 @@ module bp_cce_fsm
           pending_w_addr = mshr_r.paddr;
         end
 
-      end
+      end // e_read_mem_spec
+
       e_read_dir: begin
         // initiate the directory read
         // At the earliest, data will be valid in the next cycle
@@ -1249,7 +1331,8 @@ module bp_cce_fsm
         dir_lce_li = mshr_r.lce_id;
         dir_lru_way_li = mshr_r.lru_way_id;
         state_n = e_wait_dir_gad;
-      end
+      end // e_read_dir
+
       e_wait_dir_gad: begin
 
         // capture LRU outputs when they appear
@@ -1280,39 +1363,59 @@ module bp_cce_fsm
           mshr_n.owner_coh_state = gad_owner_coh_state_lo;
 
           // TODO: MOESIF
+          // determine next state for MESI protocol
+          // uncached/amo requests to coherent memory set block to Invalid
           mshr_n.next_coh_state =
-            (mshr_r.flags[e_opd_rqf])
-            ? e_COH_M
-            : (mshr_r.flags[e_opd_nerf])
-              ? e_COH_S
-              : (gad_cached_shared_flag_lo | gad_cached_exclusive_flag_lo | gad_cached_modified_flag_lo
-                 | gad_cached_owned_flag_lo | gad_cached_forward_flag_lo)
+            (mshr_r.flags[e_opd_arf] | mshr_r.flags[e_opd_ucf])
+            ? e_COH_I
+            : (mshr_r.flags[e_opd_rqf])
+              ? e_COH_M
+              : (mshr_r.flags[e_opd_nerf])
                 ? e_COH_S
-                : e_COH_E;
+                : (gad_cached_shared_flag_lo | gad_cached_exclusive_flag_lo | gad_cached_modified_flag_lo
+                   | gad_cached_owned_flag_lo | gad_cached_forward_flag_lo)
+                  ? e_COH_S
+                  : e_COH_E;
 
           state_n = e_write_next_state;
         end
 
-      end
+      end // e_wait_dir_gad
+
       e_write_next_state: begin
         // writing to the directory will make the sharers_v_lo signal go low, but in this FSM
         // CCE we know that the sharers vectors are still valid in the state we need from the
         // previous read, so we perform the coherence state update for the requesting LCE anyway
 
-        dir_w_v = 1'b1;
         dir_lce_li = mshr_r.lce_id;
         dir_addr_li = mshr_r.paddr;
         dir_coh_state_li = mshr_r.next_coh_state;
+
+        // upgrade request, only modify state
         if (mshr_r.flags[e_opd_uf]) begin
+          dir_w_v = 1'b1;
           dir_cmd = e_wds_op;
           dir_way_li = mshr_r.way_id;
+
+        // uncached or amo to coherent memory
+        // only write to directory if replacement flag is set indicating the requesting LCE
+        // has the block cached
+        end else if (mshr_r.flags[e_opd_arf] | mshr_r.flags[e_opd_ucf]) begin
+          dir_w_v = mshr_r.flags[e_opd_rf];
+          dir_cmd = e_wds_op;
+          dir_way_li = mshr_r.lru_way_id;
+
+        // normal requests, write tag and state
         end else begin
+          dir_w_v = 1'b1;
           dir_cmd = e_wde_op;
           dir_way_li = mshr_r.lru_way_id;
         end
 
         // Ordering of coherence actions:
         // Replacement, if needed
+        // - also set if uncached or amo request to coherent memory and requesting LCE needs
+        //   block invalidated (and possibly written back)
         // Invalidations, if needed
         // Upgrade, Transfer, or Memory access (resolve speculative access)
         state_n =
@@ -1320,13 +1423,16 @@ module bp_cce_fsm
           ? e_replacement
           : (invalidate_flag)
             ? e_inv_cmd
-            : (mshr_r.flags[e_opd_uf])
-              ? e_upgrade_stw_cmd
-              : (transfer_flag)
-                ? e_transfer
-                : e_resolve_speculation;
+            : (mshr_r.flags[e_opd_arf] | mshr_r.flags[e_opd_ucf])
+              ? e_uc_coherent_cmd
+              : (mshr_r.flags[e_opd_uf])
+                ? e_upgrade_stw_cmd
+                : (transfer_flag)
+                  ? e_transfer
+                  : e_resolve_speculation;
 
         // setup required state for sending invalidations
+        // only if next state is invalidations (i.e., not doing a replacement)
         if (~mshr_r.flags[e_opd_rf] & invalidate_flag) begin
           // don't invalidate the requesting LCE
           pe_sharers_n = sharers_hits_r & ~req_lce_id_one_hot;
@@ -1339,6 +1445,7 @@ module bp_cce_fsm
         end
 
       end // e_write_next_state
+
       e_replacement: begin
         // Send replacement writeback command if LCE Cmd port is free, else try again next cycle
         // r&v handshake
@@ -1350,6 +1457,8 @@ module bp_cce_fsm
           lce_cmd.msg_type = e_lce_cmd_st_wb;
           lce_cmd.way_id = mshr_r.lru_way_id;
           lce_cmd.addr = mshr_r.lru_paddr;
+          // Note: this state must be e_COH_I to properly handle uncached or amo access to
+          // cached/coherent memory that requires invalidating the LCE if it has the block cached
           lce_cmd.state = e_COH_I;
 
           state_n = (lce_cmd_header_v_o & lce_cmd_header_ready_i)
@@ -1357,6 +1466,7 @@ module bp_cce_fsm
                     : e_replacement;
         end
       end // e_replacement
+
       // TODO: replacement response could maybe move out of FSM and into auto-logic
       // need a DFF that tracks if wb response is pending, and must block certain following operations
       // if still waiting for response (i.e., finishing the transaction).
@@ -1369,26 +1479,11 @@ module bp_cce_fsm
             // the speculative memory access
             state_n = (invalidate_flag)
                       ? e_inv_cmd
-                      : (transfer_flag)
-                        ? e_transfer
-                        : e_resolve_speculation;
-
-            // clear the replacement flag
-            mshr_n.flags[e_opd_rf] = 1'b0;
-            // set null writeback flag
-            mshr_n.flags[e_opd_nwbf] = 1'b1;
-
-            // setup required state for sending invalidations
-            if (invalidate_flag) begin
-              // don't invalidate the requesting LCE
-              pe_sharers_n = sharers_hits_r & ~req_lce_id_one_hot;
-              // if doing a transfer, also remove owner LCE since transfer
-              // routine will take care of setting owner into correct new state
-              pe_sharers_n = transfer_flag
-                             ? pe_sharers_n & ~owner_lce_id_one_hot
-                             : pe_sharers_n;
-              cnt_rst = 1'b1;
-            end
+                      : (mshr_r.flags[e_opd_arf] | mshr_r.flags[e_opd_ucf])
+                        ? e_uc_coherent_cmd
+                        : (transfer_flag)
+                          ? e_transfer
+                          : e_resolve_speculation;
 
           end
           else if ((lce_resp.msg_type == e_lce_cce_resp_wb) & ~pending_busy) begin
@@ -1405,8 +1500,6 @@ module bp_cce_fsm
             mem_cmd.payload.way_id = '0;
             mem_cmd.size = lce_resp.size;
 
-            mem_cmd.data = lce_resp.data;
-
             // replacement done, not an upgrade, so either do invalidations, transfer, or resolve
             // the speculative memory access
             state_n = (lce_resp_yumi)
@@ -1421,26 +1514,23 @@ module bp_cce_fsm
             pending_li = 1'b1;
             pending_w_addr = lce_resp.addr;
 
-            // clear the replacement flag
-            mshr_n.flags[e_opd_rf] = 1'b0;
-            // clear null writeback flag
-            mshr_n.flags[e_opd_nwbf] = 1'b0;
-
-            // setup required state for sending invalidations
-            if (lce_resp_yumi & invalidate_flag) begin
-              // don't invalidate the requesting LCE
-              pe_sharers_n = sharers_hits_r & ~req_lce_id_one_hot;
-              // if doing a transfer, also remove owner LCE since transfer
-              // routine will take care of setting owner into correct new state
-              pe_sharers_n = transfer_flag
-                             ? pe_sharers_n & ~owner_lce_id_one_hot
-                             : pe_sharers_n;
-              cnt_rst = 1'b1;
-            end
-
           end // wb & pending bit available
-        end // lce_resp_v_i
+        end // lce_resp_v
+
+        // setup required state for sending invalidations
+        if (lce_resp_yumi & invalidate_flag) begin
+          // don't invalidate the requesting LCE
+          pe_sharers_n = sharers_hits_r & ~req_lce_id_one_hot;
+          // if doing a transfer, also remove owner LCE since transfer
+          // routine will take care of setting owner into correct new state
+          pe_sharers_n = transfer_flag
+                         ? pe_sharers_n & ~owner_lce_id_one_hot
+                         : pe_sharers_n;
+          cnt_rst = 1'b1;
+        end
+
       end // e_replacement_wb_resp
+
       e_replacement_wb_resp_data: begin
         // send data
         // last send occurs when cnt is zero
@@ -1451,15 +1541,18 @@ module bp_cce_fsm
         lce_resp_data_yumi = lce_resp_data_v & mem_cmd_data_ready_i;
 
         mcdc_down = lce_resp_data_yumi;
-        state_n = (lce_resp_yumi & (mcdc_cnt == '0))
+        state_n = (lce_resp_data_yumi & (mcdc_cnt == '0))
                   ? (invalidate_flag)
                     ? e_inv_cmd
-                    : (transfer_flag)
-                      ? e_transfer
-                      : e_resolve_speculation
+                    : (mshr_r.flags[e_opd_arf] | mshr_r.flags[e_opd_ucf])
+                      ? e_uc_coherent_cmd
+                      : (transfer_flag)
+                        ? e_transfer
+                        : e_resolve_speculation
                   : e_replacement_wb_resp_data;
 
       end // e_replacement_wb_resp_data
+
       e_inv_cmd: begin
 
         // only send invalidation if priority encode has valid output
@@ -1507,35 +1600,199 @@ module bp_cce_fsm
         end // pe_v
 
         // dequeue responses as they arrive
-        if (lce_resp_v_i & (lce_resp.header.msg_type == e_lce_cce_inv_ack)) begin
-          lce_resp_yumi_o = lce_resp_v_i;
-          cnt_dec = lce_resp_yumi_o;
+        if (lce_resp_v & (lce_resp.header.msg_type == e_lce_cce_inv_ack)) begin
+          lce_resp_yumi = lce_resp_v;
+          cnt_dec = lce_resp_yumi;
         end
-      end
+      end // e_inv_cmd
+
       e_inv_ack: begin
         if (cnt == '0) begin
-          state_n = (mshr_r.flags[e_opd_uf])
-                    ? e_upgrade_stw_cmd
-                    : (transfer_flag)
-                      ? e_transfer
-                      : e_resolve_speculation;
+          state_n = (mshr_r.flags[e_opd_arf] | mshr_r.flags[e_opd_ucf])
+                    ? e_uc_coherent_cmd
+                    : (mshr_r.flags[e_opd_uf])
+                      ? e_upgrade_stw_cmd
+                      : (transfer_flag)
+                        ? e_transfer
+                        : e_resolve_speculation;
         end else begin
           // dequeue responses as they arrive
           if (lce_resp_v & (lce_resp.msg_type == e_lce_cce_inv_ack)) begin
             lce_resp_yumi = lce_resp_v;
             cnt_dec = lce_resp_yumi;
             if (cnt == 'd1) begin
-              state_n = (mshr_r.flags[e_opd_uf])
-                        ? e_upgrade_stw_cmd
-                        : (mshr_r.flags[e_opd_rf])
-                          ? e_replacement
+              state_n = (mshr_r.flags[e_opd_arf] | mshr_r.flags[e_opd_ucf])
+                        ? e_uc_coherent_cmd
+                        : (mshr_r.flags[e_opd_uf])
+                          ? e_upgrade_stw_cmd
                           : (transfer_flag)
                             ? e_transfer
                             : e_resolve_speculation;
             end // cnt == 'd1
           end // inv ack
         end // else
+      end // e_inv_ack
+
+      // Process uncached/amo request to coherent memory space
+      e_uc_coherent_cmd: begin
+        // at this point for uncached/amo request to coherent memory, the requesting LCE
+        // has had block invalidated and written back if needed. All sharers (COH_S) blocks were
+        // also invalidated.
+
+        // now, if an owner has block it needs to be invalidated and written back (if required)
+        if (transfer_flag) begin
+          if (~lce_cmd_busy) begin
+            lce_cmd_header_v_o = 1'b1;
+            lce_cmd.dst_id = mshr_r.owner_lce_id;
+            lce_cmd.way_id = mshr_r.owner_way_id;
+            lce_cmd.addr = mshr_r.paddr;
+            lce_cmd.state = e_COH_I;
+
+            // either invalidate or set tag and writeback
+            // if owner is in F state, block is clean, so only need to invalidate
+            // else, block in E, M, or O, need to invalidate and writeback
+            lce_cmd.msg_type = mshr_r.flags[e_opd_cff]
+                               ? e_lce_cmd_inv
+                               : e_lce_cmd_st_wb;
+
+            // update state of owner in directory
+            dir_w_v = lce_cmd_header_v_o & lce_cmd_header_ready_i;
+            dir_cmd = e_wds_op;
+            dir_addr_li = mshr_r.paddr;
+            dir_lce_li = mshr_r.owner_lce_id;
+            dir_way_li = mshr_r.owner_way_id;
+            dir_coh_state_li = e_COH_I;
+
+            state_n = (lce_cmd_header_v_o & lce_cmd_header_ready_i)
+                      ? e_uc_coherent_resp
+                      : e_uc_coherent_cmd;
+
+          end
+        // no other LCE is owner, transfer flag not set
+        end else begin
+          state_n = e_uc_coherent_mem_cmd;
+        end
+      end // e_uc_coherent_cmd
+
+      // uncached/amo wait for writeback or invalidation ack if sent
+      e_uc_coherent_resp: begin
+        if (lce_resp_v) begin
+          if (lce_resp.msg_type == e_lce_cce_resp_wb) begin
+            if (~pending_busy) begin
+
+              // Mem Data Cmd needs to write pending bit, so only send if Mem Data Resp / LCE Data Cmd is
+              // not writing the pending bit
+              // r&v on mem cmd header
+              // v->y on lce resp header
+              mem_cmd_header_v_o = lce_resp_v & ~mem_credits_empty;
+              lce_resp_yumi = lce_resp_v & mem_cmd_header_v_o & mem_cmd_header_ready_i;
+
+              mem_cmd.msg_type = e_mem_msg_wr;
+              mem_cmd.addr = (lce_resp.addr >> lg_block_size_in_bytes_lp) << lg_block_size_in_bytes_lp;
+              mem_cmd.payload.lce_id = mshr_r.lce_id;
+              mem_cmd.payload.way_id = '0;
+              mem_cmd.size = lce_resp.size;
+
+              state_n = (lce_resp_yumi)
+                        ? e_uc_coherent_resp_data
+                        : e_uc_coherent_resp;
+
+              mcdc_set = 1'b1;
+              mcdc_val = lce_resp_size_in_packets;
+
+              // set the pending bit
+              pending_w_v = lce_resp_yumi;
+              pending_li = 1'b1;
+              pending_w_addr = lce_resp.addr;
+
+            end
+          end else if ((lce_resp.msg_type == e_lce_cce_resp_null_wb)
+                       | (lce_resp.msg_type == e_lce_cce_inv_ack)) begin
+            lce_resp_yumi = lce_resp_v;
+            state_n = e_uc_coherent_mem_cmd;
+          end
+        end
+
+      end // e_uc_coherent_resp
+
+      // send writeback data from uncached/amo request forced writeback
+      e_uc_coherent_resp_data: begin
+        // send data
+        // last send occurs when cnt is zero
+        // r&v on mem cmd data
+        // v->y on lce resp data
+        mem_cmd_data_o = lce_resp_data;
+        mem_cmd_data_v_o = lce_resp_data_v;
+        lce_resp_data_yumi = lce_resp_data_v & mem_cmd_data_ready_i;
+
+        mcdc_down = lce_resp_data_yumi;
+        state_n = (lce_resp_data_yumi & (mcdc_cnt == '0))
+                  ? e_uc_coherent_mem_cmd
+                  : e_uc_coherent_resp_data;
+
       end
+
+      // amo/uc after inv_ack/wb_response, issue amo op to memory
+      // writes pending bit
+      e_uc_coherent_mem_cmd: begin
+        if (~pending_busy) begin
+
+          // Mem Data Cmd needs to write pending bit, so only send if Mem Data Resp / LCE Data Cmd is
+          // not writing the pending bit
+          // r&v on mem cmd header
+          // v->y on lce resp header
+          mem_cmd_header_v_o = lce_req_v & ~mem_credits_empty;
+          lce_req_yumi = lce_req_v & mem_cmd_header_v_o & mem_cmd_header_ready_i;
+
+          // set message type based on request message type
+          unique case (lce_req.msg_type)
+            e_lce_req_type_uc_rd: mem_cmd.msg_type = e_mem_msg_uc_rd;
+            e_lce_req_type_uc_wr: mem_cmd.msg_type = e_mem_msg_uc_wr;
+            default: mem_cmd.msg_type = e_mem_msg_uc_rd;
+          endcase
+          // uncached/amo address must be aligned appropriate to the request size
+          // in the LCE request (which is stored in the MSHR)
+          mem_cmd.addr = mshr_r.paddr;
+          mem_cmd.payload.lce_id = mshr_r.lce_id;
+          mem_cmd.payload.way_id = '0;
+          mem_cmd.size = mshr_r.msg_size;
+          // this op is uncached in LCE for both amo or uncached requests
+          mem_cmd.payload.uncached = 1'b1;
+
+          // set the pending bit
+          pending_w_v = lce_req_yumi;
+          pending_li = 1'b1;
+          pending_w_addr = mshr_r.paddr;
+
+          mcdc_set = 1'b1;
+          mcdc_val = lce_req_size_in_packets;
+
+          state_n = (lce_req_yumi)
+                      ? mshr_r.flags[e_opd_rqf]
+                        ? e_uc_coherent_mem_cmd_data
+                        : e_ready
+                    : e_uc_coherent_mem_cmd;
+
+        end
+
+      end // e_uc_coherent_mem_cmd
+
+      e_uc_coherent_mem_cmd_data: begin
+        // send data
+        // last send occurs when cnt is zero
+        // r&v on mem cmd data
+        // v->y on lce req data
+        mem_cmd_data_o = lce_req_data;
+        mem_cmd_data_v_o = lce_req_data_v;
+        lce_req_data_yumi = lce_req_data_v & mem_cmd_data_ready_i;
+
+        mcdc_down = lce_req_data_yumi;
+        state_n = (lce_req_data_yumi & (mcdc_cnt == '0))
+                  ? e_ready
+                  : e_uc_coherent_mem_cmd_data;
+
+      end // e_uc_coherent_mem_cmd_data
+
       e_transfer: begin
         // TODO: modify for MOESIF
         // Transfer required, three options:
@@ -1570,6 +1827,8 @@ module bp_cce_fsm
           dir_way_li = mshr_r.owner_way_id;
           dir_coh_state_li = mshr_r.flags[e_opd_rqf] ? e_COH_I : e_COH_S;
 
+          // a transfer resulting from a write-miss does not produce a writeback and goes
+          // directly to resolving speculation
           state_n = (lce_cmd_header_v_o & lce_cmd_header_ready_i)
                     ? mshr_r.flags[e_opd_rqf]
                       ? e_resolve_speculation
@@ -1578,6 +1837,7 @@ module bp_cce_fsm
         end
 
       end // e_transfer
+
       e_transfer_wb_resp: begin
         if (lce_resp_v) begin
           if (lce_resp.msg_type == e_lce_cce_resp_null_wb) begin
@@ -1609,7 +1869,8 @@ module bp_cce_fsm
 
           end
         end
-      end
+      end // e_transfer_wb_resp
+
       e_transfer_wb_resp_data: begin
         // send data
         // last send occurs when cnt is zero
@@ -1622,8 +1883,10 @@ module bp_cce_fsm
         mcdc_down = lce_resp_data_yumi;
         state_n = (lce_resp_data_yumi & (mcdc_cnt == '0))
                   ? e_resolve_speculation
-                  : e_transfer_wb_resp;
-      end
+                  : e_transfer_wb_resp_data;
+
+      end // e_transfer_wb_resp_data
+
       e_upgrade_stw_cmd: begin
         // r&v handshake
         if (~lce_cmd_busy) begin
@@ -1639,7 +1902,8 @@ module bp_cce_fsm
                     ? e_resolve_speculation
                     : e_upgrade_stw_cmd;
         end
-      end
+      end // e_upgrade_stw_cmd
+
       e_resolve_speculation: begin
         // Resolve speculation
         if (transfer_flag | mshr_r.flags[e_opd_uf]) begin
@@ -1676,14 +1940,18 @@ module bp_cce_fsm
           spec_bits_li.spec = 1'b0;
         end
         state_n = e_ready;
-      end
+      end // e_resolve_speculation
+
       e_error: begin
         state_n = e_error;
-      end
+      end // e_error
+
       default: begin
         // use defaults above
       end
+
     endcase
+
   end // always_comb
 
   // Sequential Logic
@@ -1695,6 +1963,7 @@ module bp_cce_fsm
       sharers_ways_r <= '0;
       sharers_hits_r <= '0;
       pe_sharers_r <= '0;
+      cce_normal_mode_r <= '0;
     end else begin
       state_r <= state_n;
       mem_resp_state_r <= mem_resp_state_n;
@@ -1702,6 +1971,7 @@ module bp_cce_fsm
       sharers_ways_r <= sharers_ways_n;
       sharers_hits_r <= sharers_hits_n;
       pe_sharers_r <= pe_sharers_n;
+      cce_normal_mode_r <= cce_normal_mode_n;
     end
   end
 

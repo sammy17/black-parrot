@@ -275,7 +275,7 @@ module bp_fe_pc_gen
    pc_gen_stage_reg
     (.clk_i(clk_i)
      ,.reset_i(reset_i)
-     ,.en_i(next_pc_yumi_i)
+     ,.en_i(next_pc_yumi_i | replay_v_i)
   
      ,.data_i(pc_gen_stage_n)
      ,.data_o(pc_gen_stage_r)

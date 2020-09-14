@@ -152,17 +152,16 @@ module bp_fe_top
      );
 
   logic vaddr_v_li, vaddr_ready_li;
-  bp_fe_tlb_entry_s itlb_r_entry;
-  logic itlb_r_v_lo;
+  bp_fe_tlb_entry_s itlb_r_entry, entry_lo, passthrough_entry;
+  logic itlb_r_v_lo, itlb_v_lo, passthrough_v_lo;
   bp_tlb
    #(.bp_params_p(bp_params_p), .tlb_els_p(itlb_els_p))
    itlb
     (.clk_i(clk_i)
      ,.reset_i(reset_i)
      ,.flush_i(itlb_fence_v)
-     ,.translation_en_i(shadow_translation_en_r)
   
-     ,.v_i(vaddr_v_li | itlb_fill_v)
+     ,.v_i((vaddr_v_li | itlb_fill_v) & shadow_translation_en_r)
      ,.w_i(itlb_fill_v)
      ,.vtag_i(itlb_fill_v
               ? fe_cmd_cast_i.vaddr[vaddr_width_p-1-:vtag_width_p]
@@ -170,10 +169,28 @@ module bp_fe_top
               )
      ,.entry_i(fe_cmd_cast_i.operands.itlb_fill_response.pte_entry_leaf)
   
-     ,.v_o(itlb_r_v_lo)
+     ,.v_o(itlb_v_lo)
      ,.miss_v_o(itlb_miss_lo)
-     ,.entry_o(itlb_r_entry)
+     ,.entry_o(entry_lo)
      );
+
+  logic fetch_v_r;
+  logic [vtag_width_p-1:0] vtag_r;
+  bsg_dff_reset_en
+   #(.width_p(vtag_width_p))
+   vtag_reg
+    (.clk_i(clk_i)
+     ,.reset_i(reset_i)
+     ,.en_i(vaddr_v_li)
+
+     ,.data_i(next_pc_lo[vaddr_width_p-1-:vtag_width_p])
+     ,.data_o(vtag_r)
+     );
+
+  assign passthrough_entry = '{ptag: vtag_r, default: '0};
+  assign passthrough_v_lo  = fetch_v_r;
+  assign itlb_r_entry      = shadow_translation_en_r ? entry_lo : passthrough_entry;
+  assign itlb_r_v_lo       = shadow_translation_en_r ? itlb_v_lo : passthrough_v_lo;
   
   logic uncached_li;
   bp_pma
@@ -191,7 +208,7 @@ module bp_fe_top
   logic instr_access_fault_v, instr_page_fault_v;
   logic [instr_width_p-1:0] icache_data_lo;
   logic icache_data_v_lo;
-  assign next_pc_yumi_li = vaddr_ready_li & fe_queue_ready_i & ~(state_n == e_wait);
+  assign next_pc_yumi_li = vaddr_ready_li & fe_queue_ready_i & ~(state_r == e_wait);
   assign vaddr_v_li = next_pc_yumi_li;
   wire [ptag_width_p-1:0] ptag_li = itlb_r_entry.ptag;
   wire ptag_v_li = itlb_r_v_lo & ~instr_access_fault_v & ~instr_page_fault_v;
@@ -257,7 +274,7 @@ module bp_fe_top
      ,.data_o({shadow_priv_r, shadow_translation_en_r})
      );
      
-  logic fetch_v_r, fetch_v_rr;
+  logic fetch_v_rr;
   logic itlb_miss_r;
   logic instr_access_fault_r, instr_page_fault_r;
   always_ff @(posedge clk_i)
@@ -292,9 +309,6 @@ module bp_fe_top
   assign instr_access_fault_v = fetch_v_r & (mode_fault_v | did_fault_v);
   assign instr_page_fault_v   = fetch_v_r & itlb_r_v_lo & shadow_translation_en_r & (instr_priv_page_fault | instr_exe_page_fault);
 
-  wire fe_instr_v = fetch_v_rr & icache_data_v_lo;
-  wire fe_exception_v = fetch_v_rr & (instr_access_fault_r | instr_page_fault_r | itlb_miss_r);
-
   assign fetch_v_li = fetch_v_rr & icache_data_v_lo;
   assign fetch_instr_li = icache_data_lo;
 
@@ -307,9 +321,14 @@ module bp_fe_top
   assign attaboy_br_metadata_li = fe_cmd_cast_i.operands.attaboy.branch_metadata_fwd;
   assign attaboy_v_li = attaboy_v;
 
+  wire fe_instr_v = fetch_v_rr & icache_data_v_lo;
+  wire fe_exception_v = fetch_v_rr & (instr_access_fault_r | instr_page_fault_r | itlb_miss_r);
   assign fe_queue_v_o = fe_queue_ready_i & (fe_instr_v | fe_exception_v);
 
-  assign replay_v_li = is_stall || is_wait;
+  wire fetch_fail = fetch_v_rr & ~fe_queue_v_o;
+  wire queue_miss = (fe_instr_v | fe_exception_v) & ~fe_queue_ready_i;
+  wire icache_miss = fetch_v_rr & ~icache_data_v_lo;
+  assign replay_v_li = queue_miss | icache_miss;
 
   always_comb
     begin
@@ -335,7 +354,7 @@ module bp_fe_top
         end
     end
 
-  assign fe_cmd_yumi_o = redirect_v_li | attaboy_yumi_lo;
+  assign fe_cmd_yumi_o = (cmd_nonattaboy_v & next_pc_yumi_li) | attaboy_yumi_lo;
 
   // synopsys sync_set_reset "reset_i"
   always_ff @(posedge clk_i)
@@ -351,7 +370,7 @@ module bp_fe_top
       // Wait for FE command
       e_wait : state_n = cmd_nonattaboy_v ? e_stall : e_wait;
       e_stall: state_n = next_pc_yumi_li ? e_run : e_stall;
-      e_run  : state_n = cmd_nonattaboy_v ? e_run : replay_v_li ? e_stall : fe_exception_v ? e_wait : e_run;
+      e_run  : state_n = cmd_nonattaboy_v ? e_run : fetch_fail ? e_stall : fe_exception_v ? e_wait : e_run;
       default: state_n = e_wait;
     endcase
 

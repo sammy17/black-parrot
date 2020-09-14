@@ -33,12 +33,23 @@
  */
 typedef enum logic [3:0]
 {
-  e_mem_msg_rd       = 4'b0000  // Cache block fetch / load / Get (cached in L2/LLC)
-  ,e_mem_msg_wr      = 4'b0001  // Cache block write / writeback / store / Put (cached in L2/LLC)
-  ,e_mem_msg_uc_rd   = 4'b0010  // Uncached load (uncached in L2/LLC)
-  ,e_mem_msg_uc_wr   = 4'b0011  // Uncached store (uncached in L2/LLC)
-  ,e_mem_msg_pre     = 4'b0100  // Pre-fetch block request from CCE, fill into L2/LLC if able
-  // 4'b0101 - 4'b1111 reserved // custom
+  e_mem_msg_rd        = 4'b0000  // Cache block fetch / load / Get (cached in L2/LLC)
+  ,e_mem_msg_wr       = 4'b0001  // Cache block write / writeback / store / Put (cached in L2/LLC)
+  ,e_mem_msg_uc_rd    = 4'b0010  // Uncached load (uncached in L2/LLC)
+  ,e_mem_msg_uc_wr    = 4'b0011  // Uncached store (uncached in L2/LLC)
+  ,e_mem_msg_pre      = 4'b0100  // Pre-fetch block request from CCE, fill into L2/LLC if able
+  // Atomic support
+  ,e_mem_msg_lr       = 4'b0101
+  ,e_mem_msg_sc       = 4'b0110
+  ,e_mem_msg_amo_swap = 4'b0111
+  ,e_mem_msg_amo_add  = 4'b1000
+  ,e_mem_msg_amo_xor  = 4'b1001
+  ,e_mem_msg_amo_and  = 4'b1010
+  ,e_mem_msg_amo_or   = 4'b1011
+  ,e_mem_msg_amo_min  = 4'b1100
+  ,e_mem_msg_amo_max  = 4'b1101
+  ,e_mem_msg_amo_minu = 4'b1110
+  ,e_mem_msg_amo_maxu = 4'b1111
 } bp_mem_msg_e;
 
 /*

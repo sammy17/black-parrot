@@ -63,6 +63,7 @@
  */                                                                                                      \
   typedef struct packed                                                                                  \
   {                                                                                                      \
+    logic                                        amo_no_return;
     logic [`BSG_SAFE_CLOG2(lce_assoc_mp)-1:0]    lru_way_id;                                             \
     bp_lce_cce_req_non_excl_e                    non_exclusive;                                          \
     logic [paddr_width_mp-1:0]                   addr;                                                   \
@@ -153,13 +154,21 @@ typedef enum logic [2:0]
  * bp_lce_cce_req_type_e specifies whether the containing message is related to a read or write
  * cache miss request from and LCE.
  */
-typedef enum logic [2:0]
+typedef enum logic [3:0]
 {
-  e_lce_req_type_rd         = 3'b000 // Read-miss
-  ,e_lce_req_type_wr        = 3'b001 // Write-miss
-  ,e_lce_req_type_uc_rd     = 3'b010 // Uncached Read-miss
-  ,e_lce_req_type_uc_wr     = 3'b011 // Uncached Write-miss
-  // 3'b100 - 3'b111 reserved / custom
+  e_lce_req_type_rd         = 4'b0000 // Read-miss
+  ,e_lce_req_type_wr        = 4'b0001 // Write-miss
+  ,e_lce_req_type_uc_rd     = 4'b0010 // Uncached Read-miss
+  ,e_lce_req_type_uc_wr     = 4'b0011 // Uncached Write-miss
+  ,e_lce_req_type_amoswap   = 4'b0100 // Amoswap op
+  ,e_lce_req_type_amoadd    = 4'b0101 // Amoadd op
+  ,e_lce_req_type_amoxor    = 4'b0110 // Amoxor op
+  ,e_lce_req_type_amoand    = 4'b0111 // Amoand op
+  ,e_lce_req_type_amoor     = 4'b1000 // Amoor op
+  ,e_lce_req_type_amomin    = 4'b1001 // Amomin op
+  ,e_lce_req_type_amomax    = 4'b1010 // Amomax op
+  ,e_lce_req_type_amominu   = 4'b1011 // Amominu op
+  ,e_lce_req_type_amomaxu   = 4'b1100 // Amomaxu op
 } bp_lce_cce_req_type_e;
 
 
@@ -221,7 +230,7 @@ typedef enum logic [3:0]
   ,e_lce_cmd_st_tr           = 4'b1001 // set state and transfer block
   ,e_lce_cmd_st_tr_wb        = 4'b1010 // set state, transfer, and writeback block
   ,e_lce_cmd_uc_data         = 4'b1011 // uncached data to LCE
-  ,e_lce_cmd_uc_st_done      = 4'b1100 // uncached store complete
+  ,e_lce_cmd_uc_req_done     = 4'b1100 // uncached request complete message, no data to LCE
   // 4'b1101 - 4'b1111 reserved / custom
 } bp_lce_cmd_type_e;
 
@@ -253,7 +262,7 @@ typedef enum logic [2:0]
 
 `define bp_lce_cce_req_header_width(cce_id_width_mp, lce_id_width_mp, paddr_width_mp, lce_assoc_mp) \
   (cce_id_width_mp+$bits(bp_lce_cce_req_type_e)+$bits(bp_mem_msg_size_e)+lce_id_width_mp        \
-   +paddr_width_mp+$bits(bp_lce_cce_req_non_excl_e)+`BSG_SAFE_CLOG2(lce_assoc_mp))
+   +paddr_width_mp+$bits(bp_lce_cce_req_non_excl_e)+`BSG_SAFE_CLOG2(lce_assoc_mp)+1)
 
 `define bp_lce_cmd_header_width(cce_id_width_mp, lce_id_width_mp, paddr_width_mp, lce_assoc_mp)     \
   (cce_id_width_mp+$bits(bp_lce_cmd_type_e)+$bits(bp_mem_msg_size_e)+lce_id_width_mp            \

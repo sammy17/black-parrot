@@ -132,6 +132,11 @@ load_prog_done:
     
     /* Flush the D$ */
     fence.i
+
+    /* Enable FPU */
+    li x31, 0x2000
+    csrs mstatus, x31
+
     li x31, DRAM_BASE_ADDR
     csrw dpc, x31
     csrwi dcsr, 0x3

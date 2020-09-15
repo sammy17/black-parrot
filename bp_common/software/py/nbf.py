@@ -160,25 +160,25 @@ class NBF:
     self.print_nbf_allcores(3, cfg_base_addr + cfg_reg_reset, 0)
 
     # Write CCE ucode
-    # for core in range(self.ncpus):
-    #   for i in range(len(self.ucode)):
-    #     full_addr = cfg_base_addr + cfg_mem_base_cce_ucode + (core << cfg_core_offset) + i
-    #     self.print_nbf(3, full_addr, self.ucode[i])
+    for core in range(self.ncpus):
+      for i in range(len(self.ucode)):
+        full_addr = cfg_base_addr + cfg_mem_base_cce_ucode + (core << cfg_core_offset) + i
+        self.print_nbf(3, full_addr, self.ucode[i])
 
     # Write I$, D$, and CCE modes
-    # self.print_nbf_allcores(3, cfg_base_addr + cfg_reg_icache_mode, 1)
-    # self.print_nbf_allcores(3, cfg_base_addr + cfg_reg_dcache_mode, 1)
-    # self.print_nbf_allcores(3, cfg_base_addr + cfg_reg_cce_mode, 1)
+    self.print_nbf_allcores(3, cfg_base_addr + cfg_reg_icache_mode, 1)
+    self.print_nbf_allcores(3, cfg_base_addr + cfg_reg_dcache_mode, 1)
+    self.print_nbf_allcores(3, cfg_base_addr + cfg_reg_cce_mode, 1)
 
-    # enabled_domains = 1
-    # for i in range(6, 0, -1):
-    #   if (self.domains[i] == '1'):
-    #     enabled_domains += (2**(7-i))
+    enabled_domains = 1
+    for i in range(6, 0, -1):
+      if (self.domains[i] == '1'):
+        enabled_domains += (2**(7-i))
 
     # enabled_domains += self.domains
 
-    # self.print_nbf_allcores(3, cfg_base_addr + cfg_domain_mask, enabled_domains)
-    # self.print_nbf_allcores(3, cfg_base_addr + cfg_sac_mask, self.sac)
+    self.print_nbf_allcores(3, cfg_base_addr + cfg_domain_mask, enabled_domains)
+    self.print_nbf_allcores(3, cfg_base_addr + cfg_sac_mask, self.sac)
 
     # Write PC to the bootrom base
     self.print_nbf_allcores(3, cfg_base_addr + cfg_reg_npc, 0x103000)
@@ -189,8 +189,8 @@ class NBF:
         print(nbf)
 
     # Write DRAM
-    # if self.mem_file:
-    #   self.init_dram()
+    if self.mem_file:
+      self.init_dram()
 
     # Freeze clear
     self.print_nbf_allcores(3, cfg_base_addr + cfg_reg_freeze, 0)

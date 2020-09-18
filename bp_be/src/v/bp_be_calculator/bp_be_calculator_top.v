@@ -224,6 +224,7 @@ module bp_be_calculator_top
       reservation_n.imm    = bypass_rs3;
     end
 
+  // We have a single reservation for all FUs
   bsg_dff
    #(.width_p(dispatch_pkt_width_lp))
    reservation_reg
@@ -232,6 +233,8 @@ module bp_be_calculator_top
      ,.data_o(reservation_r)
      );
 
+  // Computation pipelines
+  // Control pipe: 1 cycle latency
   bp_be_pipe_ctl
    #(.bp_params_p(bp_params_p))
    pipe_ctl
@@ -245,7 +248,6 @@ module bp_be_calculator_top
      ,.br_pkt_o(br_pkt_o)
      );
 
-  // Computation pipelines
   // Integer pipe: 1 cycle latency
   bp_be_pipe_int
    #(.bp_params_p(bp_params_p))
@@ -337,6 +339,9 @@ module bp_be_calculator_top
      ,.trans_info_i(trans_info_lo)
      );
 
+  // System pipe
+  // 3 cycle latency for results
+  // Also handles architectural commit and writeback
   bp_be_pipe_sys
    #(.bp_params_p(bp_params_p))
    pipe_sys

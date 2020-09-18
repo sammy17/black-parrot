@@ -217,6 +217,35 @@ module bp_be_pipe_sys
      ,.fpu_en_o(fpu_en_o)
      );
 
+  localparam pipe_stage_els_lp = 6;
+  bp_be_pipe_stage_reg_s [pipe_stage_els_lp-1:0] calc_stage_r;
+  always_comb
+    begin
+      // Strip out elements of the dispatch packet that we want to save for later
+      calc_stage_r[0].pc               = reservation.pc;
+      calc_stage_r[0].instr            = reservation.instr;
+      calc_stage_r[0].v                = reservation.v;
+      calc_stage_r[0].pipe_ctl_v       = reservation.decode.pipe_ctl_v;
+      calc_stage_r[0].pipe_aux_v       = reservation.decode.pipe_aux_v;
+      calc_stage_r[0].pipe_int_v       = reservation.decode.pipe_int_v;
+      calc_stage_r[0].pipe_mem_early_v = reservation.decode.pipe_mem_early_v;
+      calc_stage_r[0].pipe_mem_final_v = reservation.decode.pipe_mem_final_v;
+      calc_stage_r[0].pipe_sys_v       = reservation.decode.pipe_sys_v;
+      calc_stage_r[0].pipe_mul_v       = reservation.decode.pipe_mul_v;
+      calc_stage_r[0].pipe_fma_v       = reservation.decode.pipe_fma_v;
+      calc_stage_r[0].pipe_long_v      = reservation.decode.pipe_long_v;
+      calc_stage_r[0].mem_v            = reservation.decode.mem_v;
+      calc_stage_r[0].csr_v            = reservation.decode.csr_v;
+      calc_stage_r[0].irf_w_v          = reservation.decode.irf_w_v;
+      calc_stage_r[0].frf_w_v          = reservation.decode.frf_w_v;
+      calc_stage_r[0].fflags_w_v       = reservation.decode.fflags_w_v;
+    end
+
+  always_ff @(posedge clk_i)
+    begin
+      calc_stage_r[pipe_stage_els_lp-1:1] <= calc_stage_r[0+:pipe_stage_els_lp-1];
+    end
+
   assign data_o           = csr_data_lo;
   assign exc_v_o          = commit_pkt.exception | (ptw_miss_pkt.instr_miss_v | ptw_miss_pkt.load_miss_v | ptw_miss_pkt.store_miss_v);
   assign miss_v_o         = commit_pkt.rollback;

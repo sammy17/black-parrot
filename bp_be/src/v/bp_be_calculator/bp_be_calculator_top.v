@@ -342,6 +342,7 @@ module bp_be_calculator_top
   // System pipe
   // 3 cycle latency for results
   // Also handles architectural commit and writeback
+  logic pipe_long_ready_lo;
   bp_be_pipe_sys
    #(.bp_params_p(bp_params_p))
    pipe_sys
@@ -352,18 +353,30 @@ module bp_be_calculator_top
      ,.kill_ex1_i(exc_stage_n[1].poison_v)
      ,.kill_ex2_i(exc_stage_n[2].poison_v)
      ,.kill_ex3_i(exc_stage_r[2].poison_v)
+     ,.flush_i(flush_i)
+
+     ,.pipe_long_ready_i(pipe_long_ready_lo)
+     ,.pipe_mem_ready_i(pipe_mem_ready_lo)
+
+     ,.btaken_int1(btaken_int1)
+     ,.br_tgt_int1(br_tgt_int1)
+
+     ,.dtlb_miss_i(pipe_mem_dtlb_miss_lo)
+     ,.dcache_miss_i(pipe_mem_dcache_miss_lo)
+     ,.fencei_i(pipe_mem_fencei_lo)
+     ,.load_misaligned_i(pipe_mem_load_misaligned_lo)
+     ,.load_access_fault_i(pipe_mem_load_access_fault_lo)
+     ,.load_page_fault_i(pipe_mem_load_page_fault_lo)
+     ,.store_misaligned_i(pipe_mem_store_misaligned_lo)
+     ,.store_access_fault_i(pipe_mem_store_access_fault_lo)
+     ,.store_page_fault_i(pipe_mem_store_page_fault_lo)
 
      ,.reservation_i(reservation_r)
 
      ,.ptw_miss_pkt_o(ptw_miss_pkt)
      ,.ptw_fill_pkt_i(ptw_fill_pkt)
 
-     ,.commit_pkt_v_i(calc_stage_r[2].v & ~exc_stage_r[2].poison_v)
-     ,.commit_pkt_queue_v_i(calc_stage_r[2].v & ~exc_stage_r[2].roll_v)
-     ,.commit_pkt_instret_i(calc_stage_r[2].v & ~exc_stage_r[2].poison_v & ~pipe_sys_miss_v_lo & ~pipe_sys_exc_v_lo)
-     ,.commit_pkt_pc_i(calc_stage_r[2].pc)
-     ,.commit_pkt_npc_i(calc_stage_r[1].pc)
-     ,.commit_pkt_instr_i(calc_stage_r[2].instr)
+     ,.calc_status_o(calc_status)
 
      ,.exception_i(exc_stage_r[2].exc)
      ,.exception_pc_i(calc_stage_r[2].pc)
@@ -403,7 +416,6 @@ module bp_be_calculator_top
      );
 
   // Variable length pipeline, used for long (potentially scoreboarded operations)
-  logic pipe_long_ready_lo;
   bp_be_pipe_long
    #(.bp_params_p(bp_params_p))
    pipe_long
@@ -423,29 +435,6 @@ module bp_be_calculator_top
      ,.fwb_pkt_o(long_fwb_pkt)
      ,.fwb_v_o(pipe_long_fdata_lo_v)
      );
-
-  // Execution pipelines
-  // Shift in dispatch pkt and move everything else down the pipe
-  assign calc_stage_n = {calc_stage_r[0+:pipe_stage_els_lp], calc_stage_isd};
-  bsg_dff
-   #(.width_p(pipe_stage_reg_width_lp*pipe_stage_els_lp))
-   calc_stage_reg
-    (.clk_i(clk_i)
-     ,.data_i({calc_stage_r[0+:pipe_stage_els_lp-1], calc_stage_isd})
-     ,.data_o(calc_stage_r)
-     );
-
-  // If a pipeline has completed an instruction (pipe_xxx_v), then mux in the calculated result.
-  // Else, mux in the previous stage of the completion pipe. Since we are single issue and have
-  //   static latencies, we cannot have two pipelines complete at the same time.
-  assign pipe_fma_data_lo_v = calc_stage_r[4].pipe_fma_v;
-  assign pipe_mul_data_lo_v = calc_stage_r[3].pipe_mul_v;
-  assign pipe_sys_data_lo_v = calc_stage_r[2].pipe_sys_v;
-  assign pipe_mem_final_data_lo_v = calc_stage_r[2].pipe_mem_final_v;
-  assign pipe_mem_early_data_lo_v = calc_stage_r[1].pipe_mem_early_v;
-  assign pipe_aux_data_lo_v = calc_stage_r[1].pipe_aux_v;
-  assign pipe_int_data_lo_v = calc_stage_r[0].pipe_int_v;
-  assign pipe_ctl_data_lo_v = calc_stage_r[0].pipe_ctl_v;
 
   always_comb
     begin
@@ -481,83 +470,8 @@ module bp_be_calculator_top
      ,.data_o(comp_stage_r)
      );
 
-  // Exception pipeline
-  bsg_dff
-   #(.width_p(exc_stage_width_lp*pipe_stage_els_lp)
-     )
-   exc_stage_reg
-    (.clk_i(clk_i)
-     ,.data_i(exc_stage_n[0+:pipe_stage_els_lp])
-     ,.data_o(exc_stage_r)
-     );
-
   always_comb
     begin
-      // Strip out elements of the dispatch packet that we want to save for later
-      calc_stage_isd.pc             = reservation_n.pc;
-      calc_stage_isd.instr          = reservation_n.instr;
-      calc_stage_isd.v              = reservation_n.v;
-      calc_stage_isd.pipe_ctl_v     = reservation_n.decode.pipe_ctl_v;
-      calc_stage_isd.pipe_aux_v     = reservation_n.decode.pipe_aux_v;
-      calc_stage_isd.pipe_int_v     = reservation_n.decode.pipe_int_v;
-      calc_stage_isd.pipe_mem_early_v = reservation_n.decode.pipe_mem_early_v;
-      calc_stage_isd.pipe_mem_final_v = reservation_n.decode.pipe_mem_final_v;
-      calc_stage_isd.pipe_sys_v     = reservation_n.decode.pipe_sys_v;
-      calc_stage_isd.pipe_mul_v     = reservation_n.decode.pipe_mul_v;
-      calc_stage_isd.pipe_fma_v     = reservation_n.decode.pipe_fma_v;
-      calc_stage_isd.pipe_long_v    = reservation_n.decode.pipe_long_v;
-      calc_stage_isd.mem_v          = reservation_n.decode.mem_v;
-      calc_stage_isd.csr_v          = reservation_n.decode.csr_v;
-      calc_stage_isd.irf_w_v        = reservation_n.decode.irf_w_v;
-      calc_stage_isd.frf_w_v        = reservation_n.decode.frf_w_v;
-      calc_stage_isd.fflags_w_v     = reservation_n.decode.fflags_w_v;
-
-      calc_status.long_busy                = ~pipe_long_ready_lo;
-      calc_status.mem_busy                 = ~pipe_mem_ready_lo;
-      calc_status.commit_v                 = commit_pkt.v;
-
-      // Dependency information for pipelines
-      for (integer i = 0; i < pipe_stage_els_lp; i++)
-        begin : dep_status
-          calc_status.dep_status[i].instr_v    = calc_stage_r[i].v
-                                                 & ~exc_stage_n[i+1].poison_v;
-          calc_status.dep_status[i].fflags_w_v = calc_stage_r[i].fflags_w_v
-                                                 & ~exc_stage_n[i+1].poison_v;
-          calc_status.dep_status[i].ctl_iwb_v = calc_stage_r[i].pipe_ctl_v
-                                                & ~exc_stage_n[i+1].poison_v
-                                                & calc_stage_r[i].irf_w_v;
-          calc_status.dep_status[i].aux_iwb_v = calc_stage_r[i].pipe_aux_v
-                                                & ~exc_stage_n[i+1].poison_v
-                                                & calc_stage_r[i].irf_w_v;
-          calc_status.dep_status[i].aux_fwb_v = calc_stage_r[i].pipe_aux_v
-                                                & ~exc_stage_n[i+1].poison_v
-                                                & calc_stage_r[i].frf_w_v;
-          calc_status.dep_status[i].int_iwb_v = calc_stage_r[i].pipe_int_v
-                                                & ~exc_stage_n[i+1].poison_v
-                                                & calc_stage_r[i].irf_w_v;
-          calc_status.dep_status[i].emem_iwb_v = calc_stage_r[i].pipe_mem_early_v
-                                                & ~exc_stage_n[i+1].poison_v
-                                                & calc_stage_r[i].irf_w_v;
-          calc_status.dep_status[i].emem_fwb_v = calc_stage_r[i].pipe_mem_early_v
-                                                & ~exc_stage_n[i+1].poison_v
-                                                & calc_stage_r[i].frf_w_v;
-          calc_status.dep_status[i].fmem_iwb_v = calc_stage_r[i].pipe_mem_final_v
-                                                & ~exc_stage_n[i+1].poison_v
-                                                & calc_stage_r[i].irf_w_v;
-          calc_status.dep_status[i].fmem_fwb_v = calc_stage_r[i].pipe_mem_final_v
-                                                & ~exc_stage_n[i+1].poison_v
-                                                & calc_stage_r[i].frf_w_v;
-          calc_status.dep_status[i].mul_iwb_v = calc_stage_r[i].pipe_mul_v
-                                                & ~exc_stage_n[i+1].poison_v
-                                                & calc_stage_r[i].irf_w_v;
-          calc_status.dep_status[i].fma_fwb_v = calc_stage_r[i].pipe_fma_v
-                                                & ~exc_stage_n[i+1].poison_v
-                                                & calc_stage_r[i].frf_w_v;
-          calc_status.dep_status[i].rd_addr   = calc_stage_r[i].instr.t.rtype.rd_addr;
-          calc_status.dep_status[i].csr_v     = calc_stage_r[i].csr_v & ~exc_stage_n[i+1].poison_v;
-          calc_status.dep_status[i].mem_v     = calc_stage_r[i].mem_v & ~exc_stage_n[i+1].poison_v;
-        end
-
       // Slicing the completion pipe for Forwarding information
       for (integer i = 1; i <= pipe_stage_els_lp; i++)
         begin : comp_stage_slice
@@ -569,55 +483,6 @@ module bp_be_calculator_top
           comp_stage_n_slice_frd[i]     = comp_stage_n[i].data[0+:dpath_width_p];
         end
     end
-
-  always_comb
-    begin
-      // Exception aggregation
-      for (integer i = 0; i <= pipe_stage_els_lp; i++)
-        begin : exc_stage
-          // Normally, shift down in the pipe
-          exc_stage_n[i] = (i == 0) ? '0 : exc_stage_r[i-1];
-        end
-          exc_stage_n[0].nop_v           = ~reservation_n.v;
-
-          exc_stage_n[0].roll_v          =                           pipe_sys_miss_v_lo;
-          exc_stage_n[1].roll_v          = exc_stage_r[0].roll_v   | pipe_sys_miss_v_lo;
-          exc_stage_n[2].roll_v          = exc_stage_r[1].roll_v   | pipe_sys_miss_v_lo;
-          exc_stage_n[3].roll_v          = exc_stage_r[2].roll_v   | pipe_sys_miss_v_lo;
-
-          exc_stage_n[0].poison_v        = reservation_n.poison    | flush_i;
-          exc_stage_n[1].poison_v        = exc_stage_r[0].poison_v | flush_i;
-          exc_stage_n[2].poison_v        = exc_stage_r[1].poison_v | flush_i;
-          // We only poison on exception or cache miss, because we also flush
-          // on, for instance, fence.i
-          exc_stage_n[3].poison_v        = exc_stage_r[2].poison_v | pipe_sys_miss_v_lo | pipe_sys_exc_v_lo;
-
-          exc_stage_n[0].exc.itlb_miss          = reservation_n.decode.itlb_miss;
-          exc_stage_n[0].exc.instr_access_fault = reservation_n.decode.instr_access_fault;
-          exc_stage_n[0].exc.instr_page_fault   = reservation_n.decode.instr_page_fault;
-          exc_stage_n[0].exc.illegal_instr      = reservation_n.decode.illegal_instr;
-
-          exc_stage_n[1].exc.dtlb_miss          = pipe_mem_dtlb_miss_lo;
-
-          exc_stage_n[2].exc.dcache_miss        = pipe_mem_dcache_miss_lo;
-          exc_stage_n[2].exc.fencei_v           = pipe_mem_fencei_lo;
-          exc_stage_n[2].exc.load_misaligned    = pipe_mem_load_misaligned_lo;
-          exc_stage_n[2].exc.load_access_fault  = pipe_mem_load_access_fault_lo;
-          exc_stage_n[2].exc.load_page_fault    = pipe_mem_load_page_fault_lo;
-          exc_stage_n[2].exc.store_misaligned   = pipe_mem_store_misaligned_lo;
-          exc_stage_n[2].exc.store_access_fault = pipe_mem_store_access_fault_lo;
-          exc_stage_n[2].exc.store_page_fault   = pipe_mem_store_page_fault_lo;
-    end
-
-  assign calc_iwb_pkt.rd_w_v     = calc_stage_r[4].irf_w_v & ~exc_stage_r[4].poison_v;
-  assign calc_iwb_pkt.rd_addr    = calc_stage_r[4].instr.t.rtype.rd_addr;
-  assign calc_iwb_pkt.rd_data    = comp_stage_r[4].data;
-  assign calc_iwb_pkt.fflags_acc = comp_stage_r[4].fflags & {5{calc_stage_r[4].fflags_w_v & ~exc_stage_r[4].poison_v}};
-
-  assign calc_fwb_pkt.rd_w_v      = calc_stage_r[5].frf_w_v & ~exc_stage_r[5].poison_v;
-  assign calc_fwb_pkt.rd_addr     = calc_stage_r[5].instr.t.rtype.rd_addr;
-  assign calc_fwb_pkt.rd_data     = comp_stage_r[5].data;
-  assign calc_fwb_pkt.fflags_acc  = comp_stage_r[5].fflags & {5{calc_stage_r[5].fflags_w_v & ~exc_stage_r[5].poison_v}};
 
   assign iwb_pkt_o = pipe_long_idata_lo_v ? long_iwb_pkt : calc_iwb_pkt;
   assign fwb_pkt_o = pipe_long_fdata_lo_v ? long_fwb_pkt : calc_fwb_pkt;

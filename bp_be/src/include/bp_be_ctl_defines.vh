@@ -255,7 +255,6 @@ typedef struct packed
 
 typedef struct packed
 {
-  logic nop_v;
   logic poison_v;
   logic roll_v;
 

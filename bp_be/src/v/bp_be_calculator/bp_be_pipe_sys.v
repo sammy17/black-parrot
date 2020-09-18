@@ -17,6 +17,7 @@ module bp_be_pipe_sys
    `declare_bp_proc_params(bp_params_p)
 
    , localparam cfg_bus_width_lp       = `bp_cfg_bus_width(vaddr_width_p, core_id_width_p, cce_id_width_p, lce_id_width_p, cce_pc_width_p, cce_instr_width_p)
+   , localparam calc_status_width_lp   = `bp_be_calc_status_width(vaddr_width_p)
    , localparam csr_cmd_width_lp       = `bp_be_csr_cmd_width
    // Generated parameters
    , localparam dispatch_pkt_width_lp = `bp_be_dispatch_pkt_width(vaddr_width_p)
@@ -34,16 +35,28 @@ module bp_be_pipe_sys
 
    , input [dispatch_pkt_width_lp-1:0]    reservation_i
 
+   , input                                btaken_int1
+   , input [vaddr_width_p-1:0]            br_tgt_int1
+   , input                                pipe_long_ready_i
+   , input                                pipe_mem_ready_i
+
+   // TODO: Get rid of kill
    , input                                kill_ex1_i
    , input                                kill_ex2_i
    , input                                kill_ex3_i
+   , input                                flush_i
 
-   , input                                commit_pkt_v_i
-   , input                                commit_pkt_queue_v_i
-   , input                                commit_pkt_instret_i
-   , input [vaddr_width_p-1:0]            commit_pkt_pc_i
-   , input [vaddr_width_p-1:0]            commit_pkt_npc_i
-   , input [instr_width_p-1:0]            commit_pkt_instr_i
+   , input                                dtlb_miss_i
+   , input                                dcache_miss_i
+   , input                                fencei_i
+   , input                                load_misaligned_i
+   , input                                load_access_fault_i
+   , input                                load_page_fault_i
+   , input                                store_misaligned_i
+   , input                                store_access_fault_i
+   , input                                store_page_fault_i
+
+   , output [calc_status_width_lp-1:0]    calc_status_o
 
    , input [exception_width_lp-1:0]       exception_i
    , input [vaddr_width_p-1:0]            exception_pc_i
@@ -52,12 +65,18 @@ module bp_be_pipe_sys
    , output [ptw_miss_pkt_width_lp-1:0]   ptw_miss_pkt_o
    , input [ptw_fill_pkt_width_lp-1:0]    ptw_fill_pkt_i
 
+   , output [wb_pkt_width_lp-1:0]         iwb_pkt_o
+   , output [wb_pkt_width_lp-1:0]         fwb_pkt_o
+
    , output logic                         miss_v_o
    , output logic                         exc_v_o
    , output logic [dpath_width_p-1:0]     data_o
 
-   , input [wb_pkt_width_lp-1:0]          iwb_pkt_i
-   , input [wb_pkt_width_lp-1:0]          fwb_pkt_i
+   , input [wb_pkt_width_lp-1:0]          fast_iwb_pkt_o
+   , input [wb_pkt_width_lp-1:0]          fast_fwb_pkt_o
+   , output [wb_pkt_width_lp-1:0]         slow_iwb_pkt_i
+   , output [wb_pkt_width_lp-1:0]         slow_fwb_pkt_i
+
    , output [commit_pkt_width_lp-1:0]     commit_pkt_o
 
    , input                                interrupt_v_i
@@ -81,14 +100,16 @@ module bp_be_pipe_sys
   bp_be_ptw_miss_pkt_s ptw_miss_pkt;
   bp_be_ptw_fill_pkt_s ptw_fill_pkt;
   bp_be_commit_pkt_s commit_pkt;
-  bp_be_wb_pkt_s iwb_pkt, fwb_pkt;
+  bp_be_wb_pkt_s fast_iwb_pkt, fast_fwb_pkt;
+  bp_be_wb_pkt_s slow_iwb_pkt, slow_fwb_pkt;
   bp_be_trans_info_s trans_info;
+  bp_be_calc_status_s calc_status;
 
   assign ptw_miss_pkt_o = ptw_miss_pkt;
   assign ptw_fill_pkt = ptw_fill_pkt_i;
   assign commit_pkt_o = commit_pkt;
-  assign iwb_pkt = iwb_pkt_i;
-  assign fwb_pkt = fwb_pkt_i;
+  assign fast_iwb_pkt = fast_iwb_pkt_i;
+  assign fast_fwb_pkt = fast_fwb_pkt_i;
   assign trans_info_o = trans_info;
 
   assign reservation = reservation_i;
@@ -172,6 +193,13 @@ module bp_be_pipe_sys
         end
     end
 
+  wire commit_pkt_v_i = calc_stage_r[2].v & ~exc_stage_r[2].poison_v;
+  wire commit_pkt_queue_v_i = calc_stage_r[2].v & ~exc_stage_r[2].roll_v;
+  wire commit_pkt_instret_i = calc_stage_r[2].v & ~exc_stage_r[2].poison_v & ~exc_v_o & ~miss_v_o;
+  wire [vaddr_width_p-1:0] commit_pkt_pc_i = calc_stage_r[2].pc;
+  wire [vaddr_width_p-1:0] commit_pkt_npc_i = calc_stage_r[1].pc;
+  wire [instr_width_p-1:0] commit_pkt_instr_i = calc_stage_r[2].instr;
+
   wire ptw_page_fault_v  = ptw_fill_pkt.instr_page_fault_v | ptw_fill_pkt.load_page_fault_v | ptw_fill_pkt.store_page_fault_v;
   wire exception_v_li = ptw_page_fault_v | commit_pkt_v_i;
   wire [vaddr_width_p-1:0] exception_pc_li = ptw_page_fault_v ? ptw_fill_pkt.pc : commit_pkt_pc_i;
@@ -217,6 +245,18 @@ module bp_be_pipe_sys
      ,.fpu_en_o(fpu_en_o)
      );
 
+  // If a pipeline has completed an instruction (pipe_xxx_v), then mux in the calculated result.
+  // Else, mux in the previous stage of the completion pipe. Since we are single issue and have
+  //   static latencies, we cannot have two pipelines complete at the same time.
+  assign pipe_fma_data_lo_v       = calc_stage_r[4].pipe_fma_v;
+  assign pipe_mul_data_lo_v       = calc_stage_r[3].pipe_mul_v;
+  assign pipe_sys_data_lo_v       = calc_stage_r[2].pipe_sys_v;
+  assign pipe_mem_final_data_lo_v = calc_stage_r[2].pipe_mem_final_v;
+  assign pipe_mem_early_data_lo_v = calc_stage_r[1].pipe_mem_early_v;
+  assign pipe_aux_data_lo_v       = calc_stage_r[1].pipe_aux_v;
+  assign pipe_int_data_lo_v       = calc_stage_r[0].pipe_int_v;
+  assign pipe_ctl_data_lo_v       = calc_stage_r[0].pipe_ctl_v;
+
   localparam pipe_stage_els_lp = 6;
   bp_be_pipe_stage_reg_s [pipe_stage_els_lp-1:0] calc_stage_r;
   always_comb
@@ -246,9 +286,94 @@ module bp_be_pipe_sys
       calc_stage_r[pipe_stage_els_lp-1:1] <= calc_stage_r[0+:pipe_stage_els_lp-1];
     end
 
+  // Exception aggregation
+  localparam commit_point_lp = 3;
+  bp_be_exc_stage_s [commit_point_lp:0] exc_stage_n, exc_stage_r;
+  always_comb
+    begin
+      // Calculator status EX1 information
+      calc_status.ex1_v                    = ~exc_stage_r[0].poison_v;
+      calc_status.ex1_npc                  = br_tgt_int1;
+      calc_status.ex1_br_or_jmp            = reservation.decode.pipe_ctl_v;
+      calc_status.ex1_btaken               = btaken_int1;
+
+      calc_status.long_busy                = ~pipe_long_ready_i;
+      calc_status.mem_busy                 = ~pipe_mem_ready_i;
+      calc_status.commit_v                 = commit_pkt.v;
+
+      // Dependency information for pipelines
+      for (integer i = 0; i < pipe_stage_els_lp; i++)
+        begin : dep_status
+          calc_status.dep_status[i].instr_v    = calc_stage_r[i].v                & ~exc_stage_n[i+1].poison_v;
+          calc_status.dep_status[i].csr_v      = calc_stage_r[i].csr_v            & ~exc_stage_n[i+1].poison_v;
+          calc_status.dep_status[i].mem_v      = calc_stage_r[i].mem_v            & ~exc_stage_n[i+1].poison_v;
+          calc_status.dep_status[i].fflags_w_v = calc_stage_r[i].fflags_w_v       & ~exc_stage_n[i+1].poison_v;
+          calc_status.dep_status[i].ctl_iwb_v  = calc_stage_r[i].pipe_ctl_v       & ~exc_stage_n[i+1].poison_v & calc_stage_r[i].irf_w_v;
+          calc_status.dep_status[i].aux_iwb_v  = calc_stage_r[i].pipe_aux_v       & ~exc_stage_n[i+1].poison_v & calc_stage_r[i].irf_w_v;
+          calc_status.dep_status[i].aux_fwb_v  = calc_stage_r[i].pipe_aux_v       & ~exc_stage_n[i+1].poison_v & calc_stage_r[i].frf_w_v;
+          calc_status.dep_status[i].int_iwb_v  = calc_stage_r[i].pipe_int_v       & ~exc_stage_n[i+1].poison_v & calc_stage_r[i].irf_w_v;
+          calc_status.dep_status[i].emem_iwb_v = calc_stage_r[i].pipe_mem_early_v & ~exc_stage_n[i+1].poison_v & calc_stage_r[i].irf_w_v;
+          calc_status.dep_status[i].emem_fwb_v = calc_stage_r[i].pipe_mem_early_v & ~exc_stage_n[i+1].poison_v & calc_stage_r[i].frf_w_v;
+          calc_status.dep_status[i].fmem_iwb_v = calc_stage_r[i].pipe_mem_final_v & ~exc_stage_n[i+1].poison_v & calc_stage_r[i].irf_w_v;
+          calc_status.dep_status[i].fmem_fwb_v = calc_stage_r[i].pipe_mem_final_v & ~exc_stage_n[i+1].poison_v & calc_stage_r[i].frf_w_v;
+          calc_status.dep_status[i].mul_iwb_v  = calc_stage_r[i].pipe_mul_v       & ~exc_stage_n[i+1].poison_v & calc_stage_r[i].irf_w_v;
+          calc_status.dep_status[i].fma_fwb_v  = calc_stage_r[i].pipe_fma_v       & ~exc_stage_n[i+1].poison_v & calc_stage_r[i].frf_w_v;
+          calc_status.dep_status[i].rd_addr    = calc_stage_r[i].instr.t.rtype.rd_addr;
+        end
+
+      // Aggregate exceptions
+      for (integer i = 0; i <= commit_point_lp; i++)
+        begin : exc_stage
+          // Normally, shift down in the pipe
+          exc_stage_n[i] = (i == 0) ? '0 : exc_stage_r[i-1];
+        end
+          exc_stage_n[0].roll_v          |= commit_pkt.rollback;
+          exc_stage_n[1].roll_v          |= commit_pkt.rollback;
+          exc_stage_n[2].roll_v          |= commit_pkt.rollback;
+
+          exc_stage_n[0].poison_v        |= flush_i;
+          exc_stage_n[1].poison_v        |= flush_i | ~reservation.v;
+          exc_stage_n[2].poison_v        |= flush_i;
+          // Make 2, and just kill commit
+          exc_stage_n[3].poison_v        |= commit_pkt.rollback
+                                            | commit_pkt.exception
+                                            | (ptw_miss_pkt.instr_miss_v | ptw_miss_pkt.load_miss_v | ptw_miss_pkt.store_miss_v);
+
+          exc_stage_n[1].exc.itlb_miss          = reservation.decode.itlb_miss;
+          exc_stage_n[1].exc.instr_access_fault = reservation.decode.instr_access_fault;
+          exc_stage_n[1].exc.instr_page_fault   = reservation.decode.instr_page_fault;
+          exc_stage_n[1].exc.illegal_instr      = reservation.decode.illegal_instr;
+          exc_stage_n[1].exc.dtlb_miss          = dtlb_miss_i;
+
+          exc_stage_n[2].exc.dcache_miss        = dcache_miss_i;
+          exc_stage_n[2].exc.fencei_v           = fencei_i;
+          exc_stage_n[2].exc.load_misaligned    = load_misaligned_i;
+          exc_stage_n[2].exc.load_access_fault  = load_access_fault_i;
+          exc_stage_n[2].exc.load_page_fault    = load_page_fault_i;
+          exc_stage_n[2].exc.store_misaligned   = store_misaligned_i;
+          exc_stage_n[2].exc.store_access_fault = store_access_fault_i;
+          exc_stage_n[2].exc.store_page_fault   = store_page_fault_i;
+    end
+
+  always_ff @(posedge clk_i)
+    begin
+      exc_stage_r <= exc_stage_n;
+    end
+
   assign data_o           = csr_data_lo;
   assign exc_v_o          = commit_pkt.exception | (ptw_miss_pkt.instr_miss_v | ptw_miss_pkt.load_miss_v | ptw_miss_pkt.store_miss_v);
   assign miss_v_o         = commit_pkt.rollback;
+
+  assign iwb_pkt.rd_w_v     = calc_stage_r[4].irf_w_v & ~exc_stage_r[4].poison_v;
+  assign iwb_pkt.rd_addr    = calc_stage_r[4].instr.t.rtype.rd_addr;
+  assign iwb_pkt.rd_data    = comp_stage_r[4].data;
+  assign iwb_pkt.fflags_acc = comp_stage_r[4].fflags & {5{calc_stage_r[4].fflags_w_v & ~exc_stage_r[4].poison_v}};
+
+  assign fwb_pkt.rd_w_v      = calc_stage_r[5].frf_w_v & ~exc_stage_r[5].poison_v;
+  assign fwb_pkt.rd_addr     = calc_stage_r[5].instr.t.rtype.rd_addr;
+  assign fwb_pkt.rd_data     = comp_stage_r[5].data;
+  assign fwb_pkt.fflags_acc  = comp_stage_r[5].fflags & {5{calc_stage_r[5].fflags_w_v & ~exc_stage_r[5].poison_v}};
+
 
 endmodule
 

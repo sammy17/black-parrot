@@ -78,5 +78,10 @@ module bp_be_pipe_ctl
   assign br_pkt.btaken    = reservation.v & ~reservation.poison & reservation.decode.pipe_ctl_v & btaken;
   assign br_pkt.npc       = btaken ? {taken_tgt[vaddr_width_p-1:1], 1'b0} : ntaken_tgt;
 
+  assign br_pkt.v         = reservation.v & ~flush_i;
+  assign br_pkt.branch    = reservation.v & reservation.decode.pipe_ctl_v;
+  assign br_pkt.btaken    = reservation.v & reservation.decode.pipe_ctl_v & btaken;
+  assign br_pkt.npc       = btaken ? {taken_tgt[vaddr_width_p-1:1], 1'b0} : ntaken_tgt;
+
 endmodule
 

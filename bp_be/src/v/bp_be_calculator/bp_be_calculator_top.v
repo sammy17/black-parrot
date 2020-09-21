@@ -188,34 +188,13 @@ module bp_be_calculator_top
      );
 
   logic [dpath_width_p-1:0] bypass_rs1, bypass_rs2, bypass_rs3;
-  bsg_mux
-   #(.width_p(dpath_width_p)
-     ,.els_p(2)
-     )
-   bypass_xrs1_mux
-    (.data_i({bypass_frs1, bypass_irs1})
-     ,.sel_i(dispatch_pkt.rs1_fp_v)
-     ,.data_o(bypass_rs1)
-     );
-
-  bsg_mux
-   #(.width_p(dpath_width_p)
-     ,.els_p(2)
-     )
-   bypass_xrs2_mux
-    (.data_i({bypass_frs2, bypass_irs2})
-     ,.sel_i(dispatch_pkt.rs2_fp_v)
-     ,.data_o(bypass_rs2)
-     );
-
-  bsg_mux
-   #(.width_p(dpath_width_p)
-     ,.els_p(2)
-     )
-   bypass_xrs3_mux
-    (.data_i({bypass_frs3, dispatch_pkt.imm})
-     ,.sel_i(dispatch_pkt.rs3_fp_v)
-     ,.data_o(bypass_rs3)
+  bsg_mux_segmented
+   #(.segments_p(3), .segment_width_p(dpath_width_p))
+   bypass_xrs_mux
+    (.data0_i({dispatch_pkt.imm, bypass_irs2, bypass_irs1})
+     ,.data1_i({bypass_frs3, bypass_frs2, bypass_frs1})
+     ,.sel_i({dispatch_pkt.rs3_fp_v, dispatch_pkt.rs2_fp_v, dispatch_pkt.rs1_fp_v})
+     ,.data_o({bypass_rs3, bypass_rs2, bypass_rs1})
      );
 
   // Override operands with bypass data

@@ -430,23 +430,23 @@ module bp_be_calculator_top
       // rv64_fflags_s                fflags_acc;
       comp_stage_n[0] = '0;
       comp_stage_n[1] = pipe_int_data_lo_v
-                        ? '{rd_data: pipe_int_data_lo, fflags_acc: '0, default: '0}
-                        : '{rd_data: pipe_ctl_data_lo, fflags_acc: '0, default: '0};
+                        ? '{rd_w_v: pipe_int_data_lo_v, rd_data: pipe_int_data_lo, fflags_acc: '0, default: '0}
+                        : '{rd_w_v: pipe_ctl_data_lo_v, rd_data: pipe_ctl_data_lo, fflags_acc: '0, default: '0};
       comp_stage_n[2] = pipe_mem_early_data_lo_v
-                        ? '{rd_data: pipe_mem_early_data_lo, fflags_acc: '0, default: '0}
+                        ? '{rd_w_v: pipe_mem_early_data_lo_v, rd_data: pipe_mem_early_data_lo, fflags_acc: '0, default: '0}
                         : pipe_aux_data_lo_v
-                          ? '{rd_data: pipe_aux_data_lo, fflags_acc: pipe_aux_fflags_lo, default: '0}
+                          ? '{rd_w_v: pipe_aux_data_lo_v, rd_data: pipe_aux_data_lo, fflags_acc: pipe_aux_fflags_lo, default: '0}
                           : comp_stage_r[1];
       comp_stage_n[3] = pipe_mem_final_data_lo_v
-                        ? '{rd_data: pipe_mem_final_data_lo, fflags_acc: '0, default: '0}
+                        ? '{rd_w_v: pipe_mem_final_data_lo_v, rd_data: pipe_mem_final_data_lo, fflags_acc: '0, default: '0}
                         : pipe_sys_data_lo_v
-                          ? '{rd_data: pipe_sys_data_lo, fflags_acc: '0, default: '0}
+                          ? '{rd_w_v: pipe_sys_data_lo_v, rd_data: pipe_sys_data_lo, fflags_acc: '0, default: '0}
                           : comp_stage_r[2];
       comp_stage_n[4] = pipe_mul_data_lo_v
-                        ? '{rd_data: pipe_mul_data_lo, fflags_acc: '0, default: '0}
+                        ? '{rd_w_v: pipe_mul_data_lo_v, rd_data: pipe_mul_data_lo, fflags_acc: '0, default: '0}
                         : comp_stage_r[3];
       comp_stage_n[5] = pipe_fma_data_lo_v
-                        ? '{rd_data: pipe_fma_data_lo, fflags_acc: pipe_fma_fflags_lo, default: '0}
+                        ? '{rd_w_v: pipe_fma_data_lo_v, rd_data: pipe_fma_data_lo, fflags_acc: pipe_fma_fflags_lo, default: '0}
                         : comp_stage_r[4];
       comp_stage_n[6] = comp_stage_r[5];
     end

@@ -37,9 +37,9 @@ module bp_cce_msg
     // Interface Widths
     , localparam mshr_width_lp             = `bp_cce_mshr_width(lce_id_width_p, lce_assoc_p, paddr_width_p)
     , localparam cfg_bus_width_lp          = `bp_cfg_bus_width(vaddr_width_p, core_id_width_p, cce_id_width_p, lce_id_width_p, cce_pc_width_p, cce_instr_width_p)
-    `declare_bp_lce_cce_if_header_widths(cce_id_width_p, lce_id_width_p, paddr_width_p, lce_assoc_p)
-    `declare_bp_lce_cce_if_widths(cce_id_width_p, lce_id_width_p, paddr_width_p, lce_assoc_p, cce_block_width_p)
-    `declare_bp_mem_if_widths(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, cce_mem)
+    `declare_bp_bedrock_lce_if_widths(paddr_width_p, cce_block_width_p, lce_id_width_p, cce_id_width_p, lce_assoc_p, lce)
+    `declare_bp_bedrock_mem_if_widths(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, cce)
+
   )
   (input                                               clk_i
    , input                                             reset_i
@@ -48,28 +48,28 @@ module bp_cce_msg
    , input [cfg_bus_width_lp-1:0]                      cfg_bus_i
 
    // LCE-CCE Interface
-   , input [lce_cce_req_width_lp-1:0]                  lce_req_i
+   , input [bp_bedrock_lce_req_msg_width_lp-1:0]       lce_req_i
    , input                                             lce_req_v_i
    , output logic                                      lce_req_yumi_o
 
-   , input [lce_cce_resp_width_lp-1:0]                 lce_resp_i
+   , input [bp_bedrock_lce_resp_msg_width_lp-1:0]      lce_resp_i
    , input                                             lce_resp_v_i
    , output logic                                      lce_resp_yumi_o
 
    // ready->valid
-   , output logic [lce_cmd_width_lp-1:0]               lce_cmd_o
-   , output logic                                      lce_cmd_v_o
-   , input                                             lce_cmd_ready_i
+   , output logic [bp_bedrock_lce_cmd_msg_width_lp-1:0]  lce_cmd_o
+   , output logic                                        lce_cmd_v_o
+   , input                                               lce_cmd_ready_i
 
    // CCE-MEM Interface
-   , input [cce_mem_msg_width_lp-1:0]                  mem_resp_i
-   , input                                             mem_resp_v_i
-   , output logic                                      mem_resp_yumi_o
+   , input [bp_bedrock_cce_mem_msg_width_lp-1:0]         mem_resp_i
+   , input                                               mem_resp_v_i
+   , output logic                                        mem_resp_yumi_o
 
    // ready->valid
-   , output logic [cce_mem_msg_width_lp-1:0]           mem_cmd_o
-   , output logic                                      mem_cmd_v_o
-   , input                                             mem_cmd_ready_i
+   , output logic [bp_bedrock_cce_mem_msg_width_lp-1:0]  mem_cmd_o
+   , output logic                                        mem_cmd_v_o
+   , input                                               mem_cmd_ready_i
 
    // Input signals to feed output commands
    , input [lce_id_width_p-1:0]                        lce_i
@@ -117,8 +117,8 @@ module bp_cce_msg
   );
 
   // LCE-CCE and Mem-CCE Interface
-  `declare_bp_mem_if(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, cce_mem);
-  `declare_bp_lce_cce_if(cce_id_width_p, lce_id_width_p, paddr_width_p, lce_assoc_p, cce_block_width_p);
+  `declare_bp_bedrock_lce_if(paddr_width_p, cce_block_width_p, lce_id_width_p, cce_id_width_p, lce_assoc_p, lce);
+  `declare_bp_bedrock_mem_if(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, cce);
 
   // Config Interface
   `declare_bp_cfg_bus_s(vaddr_width_p, core_id_width_p, cce_id_width_p, lce_id_width_p, cce_pc_width_p, cce_instr_width_p);
@@ -131,10 +131,10 @@ module bp_cce_msg
   assign cfg_bus_cast = cfg_bus_i;
 
   // Message casting
-  bp_lce_cce_req_s  lce_req;
-  bp_lce_cce_resp_s lce_resp;
-  bp_lce_cmd_s      lce_cmd;
-  bp_cce_mem_msg_s  mem_resp, mem_cmd;
+  bp_bedrock_lce_req_msg_s  lce_req;
+  bp_bedrock_lce_resp_msg_s lce_resp;
+  bp_bedrock_lce_cmd_msg_s  lce_cmd;
+  bp_bedrock_cce_mem_msg_s  mem_cmd, mem_resp;
   assign lce_req   = lce_req_i;
   assign lce_resp  = lce_resp_i;
   assign lce_cmd_o = lce_cmd;

@@ -29,9 +29,9 @@ module bp_cce_src_sel
 
     , localparam cfg_bus_width_lp = `bp_cfg_bus_width(vaddr_width_p, core_id_width_p, cce_id_width_p, lce_id_width_p, cce_pc_width_p, cce_instr_width_p)
 
-    `declare_bp_lce_cce_if_header_widths(cce_id_width_p, lce_id_width_p, paddr_width_p, lce_assoc_p)
-    `declare_bp_lce_cce_if_widths(cce_id_width_p, lce_id_width_p, paddr_width_p, lce_assoc_p, cce_block_width_p)
-    `declare_bp_mem_if_widths(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, cce_mem)
+    `declare_bp_bedrock_lce_if_widths(paddr_width_p, cce_block_width_p, lce_id_width_p, cce_id_width_p, lce_assoc_p, lce)
+    `declare_bp_bedrock_mem_if_widths(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, cce)
+
   )
   (// Select signals for src_a and src_b - from decoded instruction
    input bp_cce_inst_src_sel_e                   src_a_sel_i
@@ -59,9 +59,9 @@ module bp_cce_src_sel
    , input                                                          mem_resp_v_i
    , input                                                          lce_resp_v_i
    , input                                                          lce_req_v_i
-   , input [lce_cce_req_width_lp-1:0]                               lce_req_i
-   , input [lce_cce_resp_width_lp-1:0]                              lce_resp_i
-   , input [cce_mem_msg_width_lp-1:0]                               mem_resp_i
+   , input [bp_bedrock_lce_req_msg_width_lp-1:0]                    lce_req_i
+   , input [bp_bedrock_lce_resp_msg_width_lp-1:0]                   lce_resp_i
+   , input [bp_bedrock_cce_mem_msg_width_lp-1:0]                    mem_resp_i
 
    // Source A and B outputs
    , output logic [`bp_cce_inst_gpr_width-1:0]   src_a_o
@@ -92,16 +92,23 @@ module bp_cce_src_sel
   assign mshr = mshr_i;
 
   // LCE-CCE and Mem-CCE Interface
-  `declare_bp_mem_if(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, cce_mem);
-  `declare_bp_lce_cce_if(cce_id_width_p, lce_id_width_p, paddr_width_p, lce_assoc_p, cce_block_width_p);
+  `declare_bp_bedrock_lce_if(paddr_width_p, cce_block_width_p, lce_id_width_p, cce_id_width_p, lce_assoc_p, lce);
+  `declare_bp_bedrock_mem_if(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, cce);
 
   // Message casting
-  bp_lce_cce_req_s  lce_req;
-  bp_lce_cce_resp_s lce_resp;
-  bp_cce_mem_msg_s  mem_resp;
+  bp_bedrock_lce_req_msg_s  lce_req;
+  bp_bedrock_lce_resp_msg_s lce_resp;
+  bp_bedrock_cce_mem_msg_s  mem_resp;
+  bp_bedrock_lce_req_payload_s  lce_req_payload;
+  bp_bedrock_lce_resp_payload_s lce_resp_payload;
+  bp_bedrock_cce_mem_payload_s  mem_resp_payload;
+
   assign lce_req   = lce_req_i;
   assign lce_resp  = lce_resp_i;
   assign mem_resp  = mem_resp_i;
+  assign lce_req_payload = lce_req.header.payload;
+  assign lce_resp_payload = lce_resp.header.payload;
+  assign mem_resp_payload = mem_resp.header.payload;
 
   always_comb begin
     src_a_o = '0;
@@ -321,9 +328,9 @@ module bp_cce_src_sel
       e_mux_sel_lce_r7:         lce_o = gpr_i[e_opd_r7][0+:lce_id_width_p];
       e_mux_sel_lce_mshr_req:   lce_o = mshr.lce_id;
       e_mux_sel_lce_mshr_owner: lce_o = mshr.owner_lce_id;
-      e_mux_sel_lce_lce_req:    lce_o = lce_req.header.src_id;
-      e_mux_sel_lce_lce_resp:   lce_o = lce_resp.header.src_id;
-      e_mux_sel_lce_mem_resp:   lce_o = mem_resp.header.payload.lce_id;
+      e_mux_sel_lce_lce_req:    lce_o = lce_req_payload.src_id;
+      e_mux_sel_lce_lce_resp:   lce_o = lce_resp_payload.src_id;
+      e_mux_sel_lce_mem_resp:   lce_o = mem_resp_payload.lce_id;
       e_mux_sel_lce_pending:    lce_o = '0;
       e_mux_sel_lce_0:          lce_o = '0;
       default:                  lce_o = '0;

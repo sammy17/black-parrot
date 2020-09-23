@@ -23,8 +23,9 @@ module bp_cce_reg
     , localparam mshr_width_lp = `bp_cce_mshr_width(lce_id_width_p, lce_assoc_p, paddr_width_p)
 
     // Interface Widths
-    `declare_bp_lce_cce_if_header_widths(cce_id_width_p, lce_id_width_p, paddr_width_p, lce_assoc_p)
-    `declare_bp_mem_if_widths(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, cce_mem)
+    `declare_bp_bedrock_lce_if_widths(paddr_width_p, cce_block_width_p, lce_id_width_p, cce_id_width_p, lce_assoc_p, lce)
+    `declare_bp_bedrock_mem_if_widths(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, cce)
+
   )
   (input                                                                   clk_i
    , input                                                                 reset_i
@@ -40,9 +41,9 @@ module bp_cce_reg
    , input [`bp_cce_inst_gpr_width-1:0]                                    src_a_i
    , input [`bp_cce_inst_gpr_width-1:0]                                    alu_res_i
 
-   , input [lce_cce_req_header_width_lp-1:0]                               lce_req_header_i
-   , input [lce_cce_resp_header_width_lp-1:0]                              lce_resp_header_i
-   , input [cce_mem_msg_header_width_lp-1:0]                               mem_resp_header_i
+   , input [bp_bedrock_lce_req_msg_header_width_lp-1:0]                    lce_req_header_i
+   , input [bp_bedrock_lce_resp_msg_header_width_lp-1:0]                   lce_resp_header_i
+   , input [bp_bedrock_cce_mem_msg_header_width_lp-1:0]                    mem_resp_header_i
 
    // For RDP, output state of pending bits from read operation
    , input                                                                 pending_i
@@ -79,12 +80,12 @@ module bp_cce_reg
 
 
   // Interface Structs
-  `declare_bp_mem_if(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, cce_mem);
-  `declare_bp_lce_cce_if(cce_id_width_p, lce_id_width_p, paddr_width_p, lce_assoc_p, cce_block_width_p);
+  `declare_bp_bedrock_lce_if(paddr_width_p, cce_block_width_p, lce_id_width_p, cce_id_width_p, lce_assoc_p, lce);
+  `declare_bp_bedrock_mem_if(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, cce);
 
-  bp_lce_cce_req_header_s  lce_req_hdr;
-  bp_lce_cce_resp_header_s lce_resp_hdr;
-  bp_cce_mem_msg_header_s  mem_resp_hdr;
+  bp_bedrock_lce_req_msg_header_s  lce_req_hdr;
+  bp_bedrock_lce_resp_msg_header_s lce_resp_hdr;
+  bp_bedrock_cce_mem_msg_header_s  mem_resp_hdr;
 
   assign lce_req_hdr  = lce_req_header_i;
   assign lce_resp_hdr = lce_resp_header_i;

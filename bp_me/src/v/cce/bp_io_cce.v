@@ -6,8 +6,8 @@ module bp_io_cce
  import bp_me_pkg::*;
  #(parameter bp_params_e bp_params_p = e_bp_default_cfg
    `declare_bp_proc_params(bp_params_p)
-   `declare_bp_lce_cce_if_widths(cce_id_width_p, lce_id_width_p, paddr_width_p, lce_assoc_p, cce_block_width_p)
-   `declare_bp_mem_if_widths(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, cce_mem)
+   `declare_bp_bedrock_lce_if_widths(paddr_width_p, cce_block_width_p, lce_id_width_p, cce_id_width_p, lce_assoc_p, lce)
+   `declare_bp_bedrock_mem_if_widths(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, cce)
    )
   (input                                      clk_i
    , input                                    reset_i
@@ -31,14 +31,14 @@ module bp_io_cce
    , output                                   io_resp_yumi_o
    );
 
-  `declare_bp_mem_if(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, cce_mem);
-  `declare_bp_lce_cce_if(cce_id_width_p, lce_id_width_p, paddr_width_p, lce_assoc_p, cce_block_width_p);
+  `declare_bp_bedrock_lce_if(paddr_width_p, cce_block_width_p, lce_id_width_p, cce_id_width_p, lce_assoc_p, lce);
+  `declare_bp_bedrock_mem_if(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, cce);
 
-  bp_lce_cce_req_s        lce_req_cast_i;
-  bp_lce_cmd_s            lce_cmd_cast_o;
+  bp_bedrock_lce_req_msg_s        lce_req_cast_i;
+  bp_bedrock_lce_cmd_msg_s        lce_cmd_cast_o;
 
-  bp_cce_mem_msg_s  io_cmd_cast_o;
-  bp_cce_mem_msg_s  io_resp_cast_i;
+  bp_bedrock_cce_mem_msg_s  io_cmd_cast_o;
+  bp_bedrock_cce_mem_msg_s  io_resp_cast_i;
 
   assign lce_req_cast_i  = lce_req_i;
   assign lce_cmd_o       = lce_cmd_cast_o;

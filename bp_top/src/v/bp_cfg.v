@@ -9,7 +9,7 @@ module bp_cfg
  import bp_common_cfg_link_pkg::*;
  #(parameter bp_params_e bp_params_p = e_bp_default_cfg
    `declare_bp_proc_params(bp_params_p)
-   `declare_bp_mem_if_widths(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, xce_mem)
+   `declare_bp_bedrock_mem_if_widths(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, xce)
 
    // TODO: Should I be a global param
    , localparam cfg_max_outstanding_p = 1
@@ -18,13 +18,13 @@ module bp_cfg
   (input                                clk_i
    , input                              reset_i
 
-   , input [xce_mem_msg_width_lp-1:0]   mem_cmd_i
-   , input                              mem_cmd_v_i
-   , output                             mem_cmd_ready_o
+   , input [bp_bedrock_xce_mem_msg_width_lp-1:0]   mem_cmd_i
+   , input                                         mem_cmd_v_i
+   , output                                        mem_cmd_ready_o
 
-   , output [xce_mem_msg_width_lp-1:0]  mem_resp_o
-   , output                             mem_resp_v_o
-   , input                              mem_resp_yumi_i
+   , output [bp_bedrock_xce_mem_msg_width_lp-1:0]  mem_resp_o
+   , output                                        mem_resp_v_o
+   , input                                         mem_resp_yumi_i
 
    , output [cfg_bus_width_lp-1:0]      cfg_bus_o
    , input [io_noc_did_width_p-1:0]     did_i
@@ -40,17 +40,17 @@ module bp_cfg
    );
 
   `declare_bp_cfg_bus_s(vaddr_width_p, core_id_width_p, cce_id_width_p, lce_id_width_p, cce_pc_width_p, cce_instr_width_p);
-  `declare_bp_mem_if(paddr_width_p, dword_width_p, lce_id_width_p, lce_assoc_p, xce_mem);
+  `declare_bp_bedrock_mem_if(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, xce);
   
   bp_cfg_bus_s cfg_bus_cast_o;
-  bp_xce_mem_msg_s mem_cmd_li, mem_cmd_lo;
+  bp_bedrock_xce_mem_msg_s mem_cmd_li, mem_cmd_lo;
   
   assign cfg_bus_o = cfg_bus_cast_o;
   assign mem_cmd_li = mem_cmd_i;
 
   logic mem_cmd_v_lo, mem_cmd_yumi_li;
   bsg_fifo_1r1w_small
-   #(.width_p($bits(bp_xce_mem_msg_s)), .els_p(cfg_max_outstanding_p))
+   #(.width_p($bits(bp_bedrock_xce_mem_msg_s)), .els_p(cfg_max_outstanding_p))
    small_fifo
     (.clk_i(clk_i)
      ,.reset_i(reset_i)

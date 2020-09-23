@@ -36,8 +36,8 @@ module bp_cce_fsm
     , localparam lg_max_tag_sets_lp        = `BSG_SAFE_CLOG2(max_tag_sets_lp)
 
     // interface widths
-    `declare_bp_lce_cce_if_widths(cce_id_width_p, lce_id_width_p, paddr_width_p, lce_assoc_p, cce_block_width_p)
-    `declare_bp_mem_if_widths(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, cce_mem)
+    `declare_bp_bedrock_lce_if_widths(paddr_width_p, cce_block_width_p, lce_id_width_p, cce_id_width_p, lce_assoc_p, lce)
+    `declare_bp_bedrock_mem_if_widths(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, cce)
 
     , localparam counter_max = 256
     , localparam hash_index_width_lp=$clog2((2**lg_lce_sets_lp+num_cce_p-1)/num_cce_p)
@@ -49,28 +49,29 @@ module bp_cce_fsm
    , input [cfg_bus_width_lp-1:0]                      cfg_bus_i
 
    // LCE-CCE Interface
-   , input [lce_cce_req_width_lp-1:0]                  lce_req_i
+   , input [bp_bedrock_lce_req_msg_width_lp-1:0]       lce_req_i
    , input                                             lce_req_v_i
    , output logic                                      lce_req_yumi_o
 
-   , input [lce_cce_resp_width_lp-1:0]                 lce_resp_i
+   , input [bp_bedrock_lce_resp_msg_width_lp-1:0]      lce_resp_i
    , input                                             lce_resp_v_i
    , output logic                                      lce_resp_yumi_o
 
    // ready->valid
-   , output logic [lce_cmd_width_lp-1:0]               lce_cmd_o
-   , output logic                                      lce_cmd_v_o
-   , input                                             lce_cmd_ready_i
+   , output logic [bp_bedrock_lce_cmd_msg_width_lp-1:0]  lce_cmd_o
+   , output logic                                        lce_cmd_v_o
+   , input                                               lce_cmd_ready_i
 
    // CCE-MEM Interface
-   , input [cce_mem_msg_width_lp-1:0]                  mem_resp_i
-   , input                                             mem_resp_v_i
-   , output logic                                      mem_resp_yumi_o
+   , input [bp_bedrock_cce_mem_msg_width_lp-1:0]         mem_resp_i
+   , input                                               mem_resp_v_i
+   , output logic                                        mem_resp_yumi_o
 
    // ready->valid
-   , output logic [cce_mem_msg_width_lp-1:0]           mem_cmd_o
-   , output logic                                      mem_cmd_v_o
-   , input                                             mem_cmd_ready_i
+   , output logic [bp_bedrock_cce_mem_msg_width_lp-1:0]  mem_cmd_o
+   , output logic                                        mem_cmd_v_o
+   , input                                               mem_cmd_ready_i
+
   );
 
   //synopsys translate_off
@@ -86,15 +87,13 @@ module bp_cce_fsm
   //synopsys translate_on
 
   // Define structure variables for output queues
+  `declare_bp_bedrock_lce_if(paddr_width_p, cce_block_width_p, lce_id_width_p, cce_id_width_p, lce_assoc_p, lce);
+  `declare_bp_bedrock_mem_if(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, cce);
 
-  `declare_bp_mem_if(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, cce_mem);
-  `declare_bp_lce_cce_if(cce_id_width_p, lce_id_width_p, paddr_width_p, lce_assoc_p, cce_block_width_p);
-
-  bp_lce_cce_req_s lce_req;
-  bp_lce_cce_resp_s lce_resp;
-  bp_lce_cmd_s lce_cmd;
-
-  bp_cce_mem_msg_s mem_cmd, mem_resp;
+  bp_bedrock_lce_req_msg_s  lce_req;
+  bp_bedrock_lce_resp_msg_s lce_resp;
+  bp_bedrock_lce_cmd_msg_s  lce_cmd;
+  bp_bedrock_cce_mem_msg_s  mem_cmd, mem_resp;
 
   // assign output queue ports to structure variables
   assign lce_cmd_o = lce_cmd;

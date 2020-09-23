@@ -9,11 +9,9 @@ module bp_burst_to_lite
    , parameter in_data_width_p  = "inv"
    , parameter out_data_width_p = "inv"
 
-   // Determines which direction this module is "pointing"
-   // This is necessary to differentiate between read/write requests/responses
-   // 1: write is N beat, read is 1 beat
-   // 0: write is 1 beat, read is N beats
-   , parameter logic forward_p = 1
+   // Bitmask which etermines which message types have a data payload
+   // Constructed as (1 << e_payload_msg1 | 1 << e_payload_msg2)
+   , parameter int payload_mask_p = 0
 
    `declare_bp_mem_if_widths(paddr_width_p, in_data_width_p, lce_id_width_p, lce_assoc_p, in_mem)
    `declare_bp_mem_if_widths(paddr_width_p, out_data_width_p, lce_id_width_p, lce_assoc_p, out_mem)
@@ -66,8 +64,6 @@ module bp_burst_to_lite
 
   bp_in_mem_msg_header_s mem_header_cast_i;
   assign mem_header_cast_i = mem_header_i;
-  wire is_wr = mem_header_cast_i.msg_type inside {e_mem_msg_uc_wr, e_mem_msg_wr};
-  wire has_data = (forward_p == is_wr);
   localparam data_len_width_lp = `BSG_SAFE_CLOG2(burst_words_lp);
   wire [data_len_width_lp-1:0] incoming_burst_cmds = ((1'b1 << mem_header_cast_i.size) / in_data_bytes_lp);
   logic [data_len_width_lp-1:0] num_burst_cmds;
@@ -105,8 +101,8 @@ module bp_burst_to_lite
   bp_out_mem_msg_s mem_cast_o;
   assign mem_cast_o = '{header: header_lo, data: data_lo};
   assign mem_o = mem_cast_o;
-  wire is_rd_out = header_lo.msg_type inside {e_mem_msg_uc_rd, e_mem_msg_rd};
-  assign mem_v_o = header_v_lo & (data_v_lo | (forward_p == is_rd_out));
+  wire has_data_out = payload_mask_p[header_lo.msg_type];
+  assign mem_v_o = header_v_lo & (data_v_lo | ~has_data_out);
 
   //synopsys translate_off
   initial

@@ -9,13 +9,28 @@
 `define BP_COMMON_MEM_IF_VH
 
 `include "bsg_defines.v"
-`include "bp_common_lce_cce_if.vh"
 
 /*
  *
  * CCE-Memory Interface
  *
  */
+
+/*
+ * bp_mem_msg_size_e specifies the amount of data in the message, after the header
+ */
+typedef enum logic [3:0]
+{
+  e_mem_msg_size_0     = 4'b0000  // 0 bytes
+  ,e_mem_msg_size_1    = 4'b0001  // 1 byte
+  ,e_mem_msg_size_2    = 4'b0010  // 2 bytes
+  ,e_mem_msg_size_4    = 4'b0011  // 4 bytes
+  ,e_mem_msg_size_8    = 4'b0100  // 8 bytes
+  ,e_mem_msg_size_16   = 4'b0101  // 16 bytes
+  ,e_mem_msg_size_32   = 4'b0110  // 32 bytes
+  ,e_mem_msg_size_64   = 4'b0111  // 64 bytes
+  ,e_mem_msg_size_128  = 4'b1000  // 128 bytes
+} bp_mem_msg_size_e;
 
 /*
  * bp_mem_msg_e specifies the memory command from the UCE/CCE

@@ -348,6 +348,6 @@ typedef enum logic [2:0]
 
 `define declare_bp_bedrock_mem_if(addr_width_mp, data_width_mp, lce_id_width_mp, lce_assoc_mp, name_mp) \
   `declare_bp_bedrock_mem_payload_s(lce_id_width_mp, lce_assoc_mp, name_mp); \
-  `declare_bp_bedrock_msg_s(addr_width_mp, bp_bedrock_``name_mp``_mem_msg_payload_width_lp, data_width_mp, ``name_mp``_mem);
+  `declare_bp_bedrock_msg_s(addr_width_mp, bp_bedrock_``name_mp``_mem_payload_width_lp, data_width_mp, ``name_mp``_mem);
 
 `endif // BP_COMMON_BEDROCK_IF_VH

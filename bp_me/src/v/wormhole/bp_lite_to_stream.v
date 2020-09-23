@@ -9,11 +9,9 @@ module bp_lite_to_stream
    , parameter in_data_width_p  = "inv"
    , parameter out_data_width_p = "inv"
 
-   // Determines which direction this module is "pointing"
-   // This is necessary to differentiate between read/write requests/responses
-   // 1: write is N beat, read is 1 beat
-   // 0: write is 1 beat, read is N beats
-   , parameter logic forward_p = 0
+   // Bitmask which etermines which message types have a data payload
+   // Constructed as (1 << e_payload_msg1 | 1 << e_payload_msg2)
+   , parameter payload_mask_p = 0
 
    `declare_bp_mem_if_widths(paddr_width_p, in_data_width_p, lce_id_width_p, lce_assoc_p, in_mem)
    `declare_bp_mem_if_widths(paddr_width_p, out_data_width_p, lce_id_width_p, lce_assoc_p, out_mem)
@@ -63,11 +61,11 @@ module bp_lite_to_stream
      ,.yumi_i(mem_yumi_li)
      );
 
-  wire is_wr = mem_cast_i.header.msg_type inside {e_mem_msg_uc_wr, e_mem_msg_wr};
+  wire has_data = payload_mask_p[mem_header_cast_i.msg_type];
   localparam data_len_width_lp = `BSG_SAFE_CLOG2(stream_words_lp);
-  wire [data_len_width_lp-1:0] num_stream_cmds = (forward_p ^ is_wr)
-    ? 1'b1
-    : `BSG_MAX(((1'b1 << mem_cast_i.header.size) / out_data_bytes_lp), 1'b1);
+  wire [data_len_width_lp-1:0] num_stream_cmds = has_data
+    ? `BSG_MAX(((1'b1 << mem_cast_i.header.size) / out_data_bytes_lp), 1'b1)
+    : 1'b1;
   logic [out_data_width_p-1:0] data_lo;
   bsg_parallel_in_serial_out_dynamic
    #(.width_p(out_data_width_p), .max_els_p(stream_words_lp))

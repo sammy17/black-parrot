@@ -155,7 +155,7 @@ module bp_cce_src_sel
           e_opd_owner_way:      src_a_o[0+:lce_assoc_width_p] = mshr.owner_way_id;
           e_opd_next_coh_state: src_a_o[0+:$bits(bp_coh_states_e)] = mshr.next_coh_state;
           e_opd_flags:          src_a_o[0+:`bp_cce_inst_num_flags] = mshr.flags & imm_i[0+:`bp_cce_inst_num_flags];
-          e_opd_msg_size:       src_a_o[0+:$bits(bp_mem_msg_size_e)] = mshr.msg_size;
+          e_opd_msg_size:       src_a_o[0+:$bits(bp_bedrock_msg_size_e)] = mshr.msg_size;
           e_opd_lru_coh_state:  src_a_o[0+:$bits(bp_coh_states_e)] = mshr.lru_coh_state;
           e_opd_owner_coh_state: src_a_o[0+:$bits(bp_coh_states_e)] = mshr.owner_coh_state;
           e_opd_sharers_hit:    src_a_o[0] = sharers_hits_i[gpr_i[src_b_i.gpr[0+:`bp_cce_inst_gpr_sel_width]]];
@@ -181,8 +181,8 @@ module bp_cce_src_sel
           e_opd_lce_resp_v:    src_a_o[0] = lce_resp_v_i;
           e_opd_pending_v:     src_a_o = '0;
           e_opd_lce_req_v:     src_a_o[0] = lce_req_v_i;
-          e_opd_lce_resp_type: src_a_o[0+:$bits(bp_lce_cce_resp_type_e)] = lce_resp.header.msg_type;
-          e_opd_mem_resp_type: src_a_o[0+:$bits(bp_mem_msg_e)] = mem_resp.header.msg_type;
+          e_opd_lce_resp_type: src_a_o[0+:$bits(bp_bedrock_resp_type_e)] = lce_resp.header.msg_type.resp;
+          e_opd_mem_resp_type: src_a_o[0+:$bits(bp_bedrock_mem_type_e)] = mem_resp.header.msg_type.mem;
           e_opd_lce_resp_data: src_a_o = lce_resp.data[0+:`bp_cce_inst_gpr_width];
           e_opd_mem_resp_data: src_a_o = mem_resp.data[0+:`bp_cce_inst_gpr_width];
           e_opd_lce_req_data:  src_a_o = lce_req.data[0+:`bp_cce_inst_gpr_width];
@@ -244,7 +244,7 @@ module bp_cce_src_sel
           e_opd_owner_way:      src_b_o[0+:lce_assoc_width_p] = mshr.owner_way_id;
           e_opd_next_coh_state: src_b_o[0+:$bits(bp_coh_states_e)] = mshr.next_coh_state;
           e_opd_flags:          src_b_o[0+:`bp_cce_inst_num_flags] = mshr.flags & imm_i[0+:`bp_cce_inst_num_flags];
-          e_opd_msg_size:       src_b_o[0+:$bits(bp_mem_msg_size_e)] = mshr.msg_size;
+          e_opd_msg_size:       src_b_o[0+:$bits(bp_bedrock_msg_size_e)] = mshr.msg_size;
           e_opd_lru_coh_state:  src_b_o[0+:$bits(bp_coh_states_e)] = mshr.lru_coh_state;
           e_opd_owner_coh_state: src_b_o[0+:$bits(bp_coh_states_e)] = mshr.owner_coh_state;
           // Sharers vectors as source b is not supported
@@ -271,8 +271,8 @@ module bp_cce_src_sel
           e_opd_lce_resp_v:    src_b_o[0] = lce_resp_v_i;
           e_opd_pending_v:     src_b_o = '0;
           e_opd_lce_req_v:     src_b_o[0] = lce_req_v_i;
-          e_opd_lce_resp_type: src_b_o[0+:$bits(bp_lce_cce_resp_type_e)] = lce_resp.header.msg_type;
-          e_opd_mem_resp_type: src_b_o[0+:$bits(bp_mem_msg_e)] = mem_resp.header.msg_type;
+          e_opd_lce_resp_type: src_b_o[0+:$bits(bp_bedrock_resp_type_e)] = lce_resp.header.msg_type.resp;
+          e_opd_mem_resp_type: src_b_o[0+:$bits(bp_bedrock_mem_type_e)] = mem_resp.header.msg_type.mem;
           e_opd_lce_resp_data: src_b_o = lce_resp.data[0+:`bp_cce_inst_gpr_width];
           e_opd_mem_resp_data: src_b_o = mem_resp.data[0+:`bp_cce_inst_gpr_width];
           e_opd_lce_req_data:  src_b_o = lce_req.data[0+:`bp_cce_inst_gpr_width];

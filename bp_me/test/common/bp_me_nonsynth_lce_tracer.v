@@ -101,7 +101,7 @@ module bp_me_nonsynth_lce_tracer
         assert(lce_req_payload.src_id == lce_id_i) else $error("Bad LCE Request - source mismatch");
         $fdisplay(file, "[%t]: LCE[%0d] REQ addr[%H] cce[%0d] msg[%b] ne[%b] lru[%0d] size[%b] %H"
                   , $time, lce_req_payload.src_id, lce_req.header.addr, lce_req_payload.dst_id, lce_req.header.msg_type
-                  , lce_req_paylaod.non_exclusive, lce_req_payload.lru_way_id
+                  , lce_req_payload.non_exclusive, lce_req_payload.lru_way_id
                   , lce_req.header.size, lce_req.data
                   );
       end

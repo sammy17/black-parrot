@@ -84,12 +84,16 @@ module bp_cce_reg
   `declare_bp_bedrock_mem_if(paddr_width_p, cce_block_width_p, lce_id_width_p, lce_assoc_p, cce);
 
   bp_bedrock_lce_req_msg_header_s  lce_req_hdr;
+  bp_bedrock_lce_req_payload_s     lce_req_payload;
   bp_bedrock_lce_resp_msg_header_s lce_resp_hdr;
   bp_bedrock_cce_mem_msg_header_s  mem_resp_hdr;
+  bp_bedrock_cce_mem_payload_s     mem_resp_payload;
 
   assign lce_req_hdr  = lce_req_header_i;
+  assign lce_req_payload = lce_req_hdr.payload;
   assign lce_resp_hdr = lce_resp_header_i;
   assign mem_resp_hdr = mem_resp_header_i;
+  assign mem_resp_payload = mem_resp_hdr.payload;
 
   // Registers
   `declare_bp_cce_mshr_s(lce_id_width_p, lce_assoc_p, paddr_width_p);
@@ -117,12 +121,12 @@ module bp_cce_reg
   wire queue_op      = (decoded_inst_i.op == e_op_queue);
 
   // Flag next values
-  wire lce_req_rqf   = (lce_req_hdr.msg_type == e_lce_req_type_wr)
-                       | (lce_req_hdr.msg_type == e_lce_req_type_uc_wr);
-  wire lce_req_ucf   = (lce_req_hdr.msg_type == e_lce_req_type_uc_rd)
-                       | (lce_req_hdr.msg_type == e_lce_req_type_uc_wr);
-  wire lce_resp_nwbf = (lce_resp_hdr.msg_type == e_lce_cce_resp_null_wb);
-  wire lce_req_nerf  = (lce_req_hdr.non_exclusive == e_lce_req_non_excl);
+  wire lce_req_rqf   = (lce_req_hdr.msg_type.req == e_bedrock_req_wr)
+                       | (lce_req_hdr.msg_type.req == e_bedrock_req_uc_wr);
+  wire lce_req_ucf   = (lce_req_hdr.msg_type.req == e_bedrock_req_uc_rd)
+                       | (lce_req_hdr.msg_type.req == e_bedrock_req_uc_wr);
+  wire lce_resp_nwbf = (lce_resp_hdr.msg_type.resp == e_bedrock_resp_null_wb);
+  wire lce_req_nerf  = (lce_req_payload.non_exclusive == e_bedrock_req_non_excl);
 
   // operation writes all flags in bulk
   // branch flag ops only use e_opd_flags as source
@@ -187,7 +191,7 @@ module bp_cce_reg
       mshr_n.lru_way_id = src_a_i[0+:lce_assoc_width_p];
       mshr_n.next_coh_state = bp_coh_states_e'(src_a_i[0+:$bits(bp_coh_states_e)]);
       mshr_n.lru_coh_state = bp_coh_states_e'(src_a_i[0+:$bits(bp_coh_states_e)]);
-      mshr_n.msg_size = bp_mem_msg_size_e'(src_a_i[0+:$bits(bp_mem_msg_size_e)]);
+      mshr_n.msg_size = bp_bedrock_msg_size_e'(src_a_i[0+:$bits(bp_bedrock_msg_size_e)]);
       mshr_n.way_id = src_a_i[0+:lce_id_width_p];
       mshr_n.owner_lce_id = src_a_i[0+:lce_id_width_p];
       mshr_n.owner_way_id = src_a_i[0+:lce_assoc_width_p];
@@ -203,9 +207,9 @@ module bp_cce_reg
       if (decoded_inst_i.poph) begin
         unique case (decoded_inst_i.popq_qsel)
           e_src_q_sel_lce_req: begin
-            mshr_n.lce_id = lce_req_hdr.src_id;
+            mshr_n.lce_id = lce_req_payload.src_id;
             mshr_n.paddr = lce_req_hdr.addr;
-            mshr_n.lru_way_id = lce_req_hdr.lru_way_id;
+            mshr_n.lru_way_id = lce_req_payload.lru_way_id;
             mshr_n.msg_size = lce_req_hdr.size;
             mshr_n.flags[e_opd_rqf] = lce_req_rqf;
             mshr_n.flags[e_opd_ucf] = lce_req_ucf;
@@ -223,7 +227,7 @@ module bp_cce_reg
             //mshr_n.paddr = mem_resp_hdr.addr;
             //mshr_n.next_coh_state = mem_resp_hdr.payload.state;
             //mshr_n.msg_size = mem_resp_hdr.size;
-            mshr_n.flags[e_opd_sf] = mem_resp_hdr.payload.speculative;
+            mshr_n.flags[e_opd_sf] = mem_resp_payload.speculative;
           end
           default: begin
           end

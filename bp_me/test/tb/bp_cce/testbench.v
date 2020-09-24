@@ -68,7 +68,7 @@ endfunction
 
 // CFG IF
 bp_cfg_bus_s           cfg_bus_lo;
-bp_cce_mem_msg_s       cfg_mem_cmd_lo;
+bp_bedrock_cce_mem_msg_s cfg_mem_cmd_lo;
 logic                  cfg_mem_cmd_v_lo, cfg_mem_cmd_ready_li;
 
 // CCE-MEM IF
